@@ -22,6 +22,7 @@ import {
   User,
   UserRole,
 } from '../types';
+import { parseGoogleSheetCsvToJadwal } from '../utils/sheetParser';
 
 interface ConflictCheckResult {
   hasConflict: boolean;
@@ -118,7 +119,9 @@ interface AppContextType {
   lastSyncTime: string | null;
   isSyncingSheets: boolean;
   syncWithSheets: () => Promise<{ success: boolean; message: string }>;
+  fetchFromGoogleSheets: () => Promise<{ success: boolean; count: number; message: string }>;
 }
+
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -169,8 +172,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [jadwalList, setJadwalList] = useState<Jadwal[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.JADWAL);
-    return saved ? JSON.parse(saved) : generateInitialJadwal();
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Remove old mock dummy schedules (jdw_1 to jdw_20)
+          return parsed.filter(
+            (j) => !/^jdw_(1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|16|17|18|19|20)$/.test(j.id)
+          );
+        }
+      } catch {
+        return [];
+      }
+    }
+    return generateInitialJadwal();
   });
+
 
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.LOGS);
@@ -398,19 +415,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
           return {
             id: j.id,
-            tanggal: j.tanggal,
-            hari: j.hari,
+            tanggal: j.tanggal || '',
+            hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
-            ruangan: ruangan?.nama_ruangan || ruanganName,
-            guru: guru?.nama_guru || guruName,
-            nip_guru: guru?.nip || '-',
-            mata_pelajaran: j.mata_pelajaran,
-            kelas: kelas?.nama_kelas || 'Kelas',
-            keperluan: j.keperluan || '-',
-            status: j.status,
-            pembuat: j.created_by_name || 'Guru',
-            created_at: j.created_at,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            ruangan: ruangan?.nama_ruangan || '',
+            guru: guru?.nama_guru || '',
+            nip_guru: guru?.nip || '',
+            mata_pelajaran: j.mata_pelajaran || '',
+            kelas: kelas?.nama_kelas || '',
+            keperluan: j.keperluan || '',
+            status: j.status || '',
+            pembuat: j.created_by_name || '',
+            created_at: j.created_at || '',
           };
         });
 
@@ -426,6 +443,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }).catch((err) => console.warn('Auto webhook sync notice:', err));
       }
     }
+
 
     return {
       success: true,
@@ -492,19 +510,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
           return {
             id: j.id,
-            tanggal: j.tanggal,
-            hari: j.hari,
+            tanggal: j.tanggal || '',
+            hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
-            ruangan: ruangan?.nama_ruangan || 'Ruangan',
-            guru: guru?.nama_guru || 'Guru',
-            nip_guru: guru?.nip || '-',
-            mata_pelajaran: j.mata_pelajaran,
-            kelas: kelas?.nama_kelas || 'Kelas',
-            keperluan: j.keperluan || '-',
-            status: j.status,
-            pembuat: j.created_by_name || 'Guru',
-            created_at: j.created_at,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            ruangan: ruangan?.nama_ruangan || '',
+            guru: guru?.nama_guru || '',
+            nip_guru: guru?.nip || '',
+            mata_pelajaran: j.mata_pelajaran || '',
+            kelas: kelas?.nama_kelas || '',
+            keperluan: j.keperluan || '',
+            status: j.status || '',
+            pembuat: j.created_by_name || '',
+            created_at: j.created_at || '',
           };
         });
 
@@ -520,6 +538,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }).catch((err) => console.warn('Auto webhook sync notice:', err));
       }
     }
+
 
     return { success: true, message: 'Jadwal berhasil diperbarui.' };
   };
@@ -548,19 +567,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
           return {
             id: j.id,
-            tanggal: j.tanggal,
-            hari: j.hari,
+            tanggal: j.tanggal || '',
+            hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
-            ruangan: ruangan?.nama_ruangan || 'Ruangan',
-            guru: guru?.nama_guru || 'Guru',
-            nip_guru: guru?.nip || '-',
-            mata_pelajaran: j.mata_pelajaran,
-            kelas: kelas?.nama_kelas || 'Kelas',
-            keperluan: j.keperluan || '-',
-            status: j.status,
-            pembuat: j.created_by_name || 'Guru',
-            created_at: j.created_at,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            ruangan: ruangan?.nama_ruangan || '',
+            guru: guru?.nama_guru || '',
+            nip_guru: guru?.nip || '',
+            mata_pelajaran: j.mata_pelajaran || '',
+            kelas: kelas?.nama_kelas || '',
+            keperluan: j.keperluan || '',
+            status: j.status || '',
+            pembuat: j.created_by_name || '',
+            created_at: j.created_at || '',
           };
         });
 
@@ -637,19 +656,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
           return {
             id: j.id,
-            tanggal: j.tanggal,
-            hari: j.hari,
+            tanggal: j.tanggal || '',
+            hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
-            ruangan: ruangan?.nama_ruangan || 'Ruangan',
-            guru: guru?.nama_guru || 'Guru',
-            nip_guru: guru?.nip || '-',
-            mata_pelajaran: j.mata_pelajaran,
-            kelas: kelas?.nama_kelas || 'Kelas',
-            keperluan: j.keperluan || '-',
-            status: j.status,
-            pembuat: j.created_by_name || 'Guru',
-            created_at: j.created_at,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            ruangan: ruangan?.nama_ruangan || '',
+            guru: guru?.nama_guru || '',
+            nip_guru: guru?.nip || '',
+            mata_pelajaran: j.mata_pelajaran || '',
+            kelas: kelas?.nama_kelas || '',
+            keperluan: j.keperluan || '',
+            status: j.status || '',
+            pembuat: j.created_by_name || '',
+            created_at: j.created_at || '',
           };
         });
 
@@ -687,19 +706,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
           return {
             id: j.id,
-            tanggal: j.tanggal,
-            hari: j.hari,
+            tanggal: j.tanggal || '',
+            hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
-            ruangan: ruangan?.nama_ruangan || 'Ruangan',
-            guru: guru?.nama_guru || 'Guru',
-            nip_guru: guru?.nip || '-',
-            mata_pelajaran: j.mata_pelajaran,
-            kelas: kelas?.nama_kelas || 'Kelas',
-            keperluan: j.keperluan || '-',
-            status: j.status,
-            pembuat: j.created_by_name || 'Guru',
-            created_at: j.created_at,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            ruangan: ruangan?.nama_ruangan || '',
+            guru: guru?.nama_guru || '',
+            nip_guru: guru?.nip || '',
+            mata_pelajaran: j.mata_pelajaran || '',
+            kelas: kelas?.nama_kelas || '',
+            keperluan: j.keperluan || '',
+            status: j.status || '',
+            pembuat: j.created_by_name || '',
+            created_at: j.created_at || '',
           };
         });
 
@@ -718,6 +737,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return { success: true, message: 'Status jadwal diubah menjadi Selesai.' };
   };
+
 
   // Master Guru
   const createGuru = (data: Omit<Guru, 'id'>) => {
@@ -935,19 +955,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         return {
           id: j.id,
-          tanggal: j.tanggal,
-          hari: j.hari,
+          tanggal: j.tanggal || '',
+          hari: j.hari || '',
           jam_ke: j.jam_ke,
-          waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
-          ruangan: ruangan?.nama_ruangan || 'Ruangan',
-          guru: guru?.nama_guru || 'Guru',
-          nip_guru: guru?.nip || '-',
-          mata_pelajaran: j.mata_pelajaran,
-          kelas: kelas?.nama_kelas || 'Kelas',
-          keperluan: j.keperluan || '-',
-          status: j.status,
-          pembuat: j.created_by_name || 'Admin/Guru',
-          created_at: j.created_at,
+          waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+          ruangan: ruangan?.nama_ruangan || '',
+          guru: guru?.nama_guru || '',
+          nip_guru: guru?.nip || '',
+          mata_pelajaran: j.mata_pelajaran || '',
+          kelas: kelas?.nama_kelas || '',
+          keperluan: j.keperluan || '',
+          status: j.status || '',
+          pembuat: j.created_by_name || '',
+          created_at: j.created_at || '',
         };
       });
 
@@ -1000,6 +1020,57 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     } catch {
       setIsSyncingSheets(false);
       return { success: false, message: 'Gagal melakukan sinkronisasi dengan Google Sheets.' };
+    }
+  };
+
+  // Fetch real schedule rows directly from published Google Sheets CSV
+  const fetchFromGoogleSheets = async () => {
+    const sheetId = (settings.googleSheetId || settings.googleSheetsId || '').trim();
+    if (!sheetId) {
+      return {
+        success: false,
+        count: 0,
+        message: 'Google Sheet ID belum dikonfigurasi.',
+      };
+    }
+
+    try {
+      setIsSyncingSheets(true);
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+      const response = await fetch(csvUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      const csvText = await response.text();
+      const parsedJadwal = parseGoogleSheetCsvToJadwal(csvText, guruList, kelasList, ruanganList);
+
+      // Only contain what is strictly in the spreadsheet; if empty, keep it empty
+      setJadwalList(parsedJadwal);
+      const syncTime = new Date().toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      setLastSheetsSyncTime(syncTime);
+      addLog(
+        'SYNC_SHEETS',
+        'Sheets',
+        `Memuat ${parsedJadwal.length} data jadwal langsung dari Google Spreadsheet (${sheetId}).`
+      );
+      setIsSyncingSheets(false);
+      return {
+        success: true,
+        count: parsedJadwal.length,
+        message: `Berhasil memuat ${parsedJadwal.length} data jadwal langsung dari Google Spreadsheet.`,
+      };
+    } catch (err) {
+      console.warn('Fetch from Google Sheets error:', err);
+      setIsSyncingSheets(false);
+      return {
+        success: false,
+        count: 0,
+        message: 'Gagal membaca CSV dari Google Sheets. Pastikan Spreadsheet dibagikan publik (Anyone with link).',
+      };
     }
   };
 
@@ -1060,11 +1131,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lastSyncTime: lastSheetsSyncTime,
         isSyncingSheets,
         syncWithSheets,
+        fetchFromGoogleSheets,
       }}
     >
       {children}
     </AppContext.Provider>
   );
+
 };
 
 export const useApp = () => {

@@ -126,19 +126,27 @@ export const DashboardView: React.FC = () => {
     return days;
   }, [jadwalList]);
 
-  // Monthly stats
+  // Monthly stats calculated dynamically from real schedule records
   const monthlyStats = useMemo(() => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-    // Mock distribution centered around July-August (Academic Year Start)
-    return [
-      { month: 'Jul', perpus: 14, labkom: 18 },
-      { month: 'Agu', perpus: 22, labkom: 26 },
-      { month: 'Sep', perpus: 19, labkom: 24 },
-      { month: 'Okt', perpus: 25, labkom: 30 },
-      { month: 'Nov', perpus: 18, labkom: 22 },
-      { month: 'Des', perpus: 12, labkom: 15 },
+    const months = [
+      { key: '07', label: 'Jul' },
+      { key: '08', label: 'Agu' },
+      { key: '09', label: 'Sep' },
+      { key: '10', label: 'Okt' },
+      { key: '11', label: 'Nov' },
+      { key: '12', label: 'Des' },
     ];
-  }, []);
+    return months.map((m) => {
+      const perpus = jadwalList.filter(
+        (j) => j.status !== 'Dibatalkan' && j.ruangan_id === 'rng_perpus' && j.tanggal.includes(`-${m.key}-`)
+      ).length;
+      const labkom = jadwalList.filter(
+        (j) => j.status !== 'Dibatalkan' && j.ruangan_id === 'rng_labkom' && j.tanggal.includes(`-${m.key}-`)
+      ).length;
+      return { month: m.label, perpus, labkom };
+    });
+  }, [jadwalList]);
+
 
   const handleQuickBook = (ruanganId?: string) => {
     setPrefilledBooking({

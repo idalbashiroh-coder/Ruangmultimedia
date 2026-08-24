@@ -161,6 +161,7 @@ export const PengaturanView: React.FC = () => {
     clearAuditLogs,
     currentUser,
     syncWithSheets,
+    fetchFromGoogleSheets,
     isSyncingSheets,
     lastSyncTime,
     jadwalList,
@@ -171,6 +172,7 @@ export const PengaturanView: React.FC = () => {
     clearHistoricalJadwal,
     resetAllDataToDefault,
   } = useApp();
+
 
   const [formSettings, setFormSettings] = useState<AppSettings>(() => ({
     ...settings,
@@ -255,19 +257,19 @@ export const PengaturanView: React.FC = () => {
       const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
 
       return [
-        `"${j.id}"`,
-        `"${j.tanggal}"`,
-        `"${j.hari}"`,
-        `"${j.jam_ke}"`,
-        `"${jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`}"`,
-        `"${(ruangan?.nama_ruangan || 'Ruangan').replace(/"/g, '""')}"`,
-        `"${(guru?.nama_guru || 'Guru').replace(/"/g, '""')}"`,
-        `"${(guru?.nip || '-').replace(/"/g, '""')}"`,
+        `"${j.id || ''}"`,
+        `"${j.tanggal || ''}"`,
+        `"${j.hari || ''}"`,
+        `"${j.jam_ke || ''}"`,
+        `"${jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : ''}"`,
+        `"${(ruangan?.nama_ruangan || '').replace(/"/g, '""')}"`,
+        `"${(guru?.nama_guru || '').replace(/"/g, '""')}"`,
+        `"${(guru?.nip || '').replace(/"/g, '""')}"`,
         `"${(j.mata_pelajaran || '').replace(/"/g, '""')}"`,
-        `"${(kelas?.nama_kelas || 'Kelas').replace(/"/g, '""')}"`,
-        `"${(j.keperluan || '-').replace(/"/g, '""')}"`,
-        `"${j.status}"`,
-        `"${(j.created_by_name || 'Admin').replace(/"/g, '""')}"`,
+        `"${(kelas?.nama_kelas || '').replace(/"/g, '""')}"`,
+        `"${(j.keperluan || '').replace(/"/g, '""')}"`,
+        `"${j.status || ''}"`,
+        `"${(j.created_by_name || '').replace(/"/g, '""')}"`,
       ].join(',');
     });
 
@@ -288,6 +290,14 @@ export const PengaturanView: React.FC = () => {
     setSyncFeedback(res);
     setTimeout(() => setSyncFeedback(null), 6000);
   };
+
+  const handleFetchFromSheets = async () => {
+    setSyncFeedback(null);
+    const res = await fetchFromGoogleSheets();
+    setSyncFeedback(res);
+    setTimeout(() => setSyncFeedback(null), 6000);
+  };
+
 
   // New user form state
   const [newUsername, setNewUsername] = useState('');
@@ -715,26 +725,37 @@ export const PengaturanView: React.FC = () => {
             {/* Manual Sync Bar */}
             <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div>
-                <p className="font-bold text-emerald-950">Uji Koneksi & Sinkronisasi Massal</p>
+                <p className="font-bold text-emerald-950">Sinkronisasi & Penarikan Data Spreadsheet</p>
                 <p className="text-[11px] text-emerald-800">
-                  Total data lokal:{' '}
-                  <strong>{jadwalList.filter((j) => j.status !== 'Dibatalkan').length} jadwal aktif</strong> |
+                  Total data jadwal: <strong>{jadwalList.length} entri ({jadwalList.filter((j) => j.status !== 'Dibatalkan').length} aktif)</strong> |
                   Terakhir sinkron: <strong>{lastSyncTime || 'Belum pernah'}</strong>
                 </p>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={handleFetchFromSheets}
+                  disabled={isSyncingSheets || !formSettings.googleSheetsId}
+                  className="px-3.5 py-2 rounded-xl bg-white hover:bg-slate-50 text-emerald-800 border border-emerald-300 font-bold flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all shadow-xs"
+                  title="Tarik data jadwal langsung dari Google Spreadsheet sesuai apa adanya tanpa data tiruan"
+                >
+                  <Download className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-bounce' : ''}`} />
+                  <span>Tarik dari Sheets</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleManualSync}
                   disabled={isSyncingSheets}
-                  className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold flex items-center justify-center gap-2 disabled:opacity-50 transition-all shadow-xs"
                 >
                   <RefreshCw className={`w-4 h-4 ${isSyncingSheets ? 'animate-spin' : ''}`} />
-                  <span>{isSyncingSheets ? 'Mengirim Data...' : 'Kirim / Sinkronkan Sekarang'}</span>
+                  <span>{isSyncingSheets ? 'Memproses...' : 'Kirim ke Spreadsheet'}</span>
                 </button>
               </div>
             </div>
+
           </div>
 
           {/* Interactive Tutorial Accordion & Code Block */}
