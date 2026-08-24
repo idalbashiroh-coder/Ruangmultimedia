@@ -7,6 +7,7 @@ import { getHariNameFromDate } from '../data/initialData';
 export function extractGoogleSheetDetails(rawInput: string | null | undefined): {
   sheetId: string;
   gid?: string;
+  sheetName?: string;
   isWebPublished: boolean;
   publishedCsvUrl?: string;
 } {
@@ -46,9 +47,14 @@ export function extractGoogleSheetDetails(rawInput: string | null | undefined): 
   const gidMatch = str.match(/[?&#]gid=([0-9]+)/);
   const gid = gidMatch ? gidMatch[1] : undefined;
 
+  // Extract sheet name if provided in URL (e.g. &sheet=Jadwal_Multimedia)
+  const sheetMatch = str.match(/[?&#]sheet=([^&#]+)/);
+  const sheetName = sheetMatch ? decodeURIComponent(sheetMatch[1]) : undefined;
+
   return {
     sheetId,
     gid,
+    sheetName,
     isWebPublished: false,
   };
 }
@@ -257,6 +263,7 @@ export function parseGVizResponseToRows(gvizData: any): any[][] {
 export function fetchGoogleSheetGVizJsonp(
   sheetId: string,
   gid?: string,
+  sheetName?: string,
   timeoutMs: number = 7000
 ): Promise<any[][]> {
   return new Promise((resolve, reject) => {
@@ -284,7 +291,8 @@ export function fetchGoogleSheetGVizJsonp(
         const rows = parseGVizResponseToRows(response);
         resolve(rows);
       } else if (response && response.status === 'error') {
-        const errMsg = response.errors?.[0]?.detailed_message || response.errors?.[0]?.message || 'GViz error status';
+        const errMsg =
+          response.errors?.[0]?.detailed_message || response.errors?.[0]?.message || 'GViz error';
         reject(new Error(errMsg));
       } else {
         reject(new Error('Format GViz tidak dikenali'));
@@ -302,9 +310,10 @@ export function fetchGoogleSheetGVizJsonp(
     };
 
     const gidParam = gid ? `&gid=${gid}` : '';
+    const sheetParam = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : '';
     script.src = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
       sheetId
-    )}/gviz/tq?tqx=responseHandler:${callbackName}${gidParam}&tq=&_t=${Date.now()}`;
+    )}/gviz/tq?tqx=responseHandler:${callbackName}${gidParam}${sheetParam}&tq=&_t=${Date.now()}`;
 
     document.head.appendChild(script);
   });
@@ -315,12 +324,14 @@ export function fetchGoogleSheetGVizJsonp(
  */
 export async function fetchGoogleSheetGVizDirect(
   sheetId: string,
-  gid?: string
+  gid?: string,
+  sheetName?: string
 ): Promise<any[][]> {
   const gidParam = gid ? `&gid=${gid}` : '';
+  const sheetParam = sheetName ? `&sheet=${encodeURIComponent(sheetName)}` : '';
   const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(
     sheetId
-  )}/gviz/tq?tqx=out:json${gidParam}&tq=&_t=${Date.now()}`;
+  )}/gviz/tq?tqx=out:json${gidParam}${sheetParam}&tq=&_t=${Date.now()}`;
 
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -403,13 +414,30 @@ export async function fetchGoogleSheetViaCorsProxy(targetUrl: string): Promise<a
 }
 
 /**
- * Universal Multi-Strategy Fetcher for Google Sheets Data
+ * Candidate sheet names to search when reading Google Spreadsheet
+ */
+const KNOWN_SHEET_CANDIDATES = [
+  'Jadwal_Multimedia',
+  'Jadwal',
+  'Jadwal Multimedia',
+  '', // default active tab
+  'Sheet1',
+  'Sheet 1',
+  'Peminjaman',
+  'Data_Jadwal',
+  'Respon Formulir 1',
+  'Form Responses 1',
+];
+
+/**
+ * Universal Multi-Strategy Fetcher for Google Sheets Data with Tab Scanning
  */
 export async function fetchAllGoogleSheetRawRows(
   sheetInput: string,
   webhookUrl?: string
 ): Promise<{ rows: any[][]; source: string }> {
-  const { sheetId, gid, isWebPublished, publishedCsvUrl } = extractGoogleSheetDetails(sheetInput);
+  const { sheetId, gid, sheetName, isWebPublished, publishedCsvUrl } =
+    extractGoogleSheetDetails(sheetInput);
 
   const errors: string[] = [];
 
@@ -425,27 +453,52 @@ export async function fetchAllGoogleSheetRawRows(
     }
   }
 
-  // Strategy B: GViz JSONP (Guaranteed zero CORS issues)
-  if (sheetId) {
-    try {
-      const rows = await fetchGoogleSheetGVizJsonp(sheetId, gid, 6000);
-      if (rows && rows.length > 0) {
-        return { rows, source: 'Google Sheets GViz API' };
-      }
-    } catch (e: any) {
-      errors.push(`GViz JSONP: ${e.message}`);
+  // Determine list of sheet tab candidates
+  const tabsToTry: string[] = [];
+  if (sheetName) {
+    tabsToTry.push(sheetName);
+  }
+  for (const cand of KNOWN_SHEET_CANDIDATES) {
+    if (!tabsToTry.includes(cand)) {
+      tabsToTry.push(cand);
     }
   }
 
-  // Strategy C: GViz Direct JSON Fetch
+  // Strategy B: GViz JSONP Multi-Tab Scanning (Guaranteed zero CORS issues)
   if (sheetId) {
-    try {
-      const rows = await fetchGoogleSheetGVizDirect(sheetId, gid);
-      if (rows && rows.length > 0) {
-        return { rows, source: 'GViz Direct' };
+    for (const tab of tabsToTry) {
+      try {
+        const rows = await fetchGoogleSheetGVizJsonp(sheetId, gid, tab, 5000);
+        // A valid table has at least 1 row of real data (row 0 header + row 1 data or at least data rows)
+        if (rows && rows.length >= 2) {
+          const tabLabel = tab ? ` (${tab})` : '';
+          return { rows, source: `Google Sheets GViz API${tabLabel}` };
+        } else if (rows && rows.length === 1) {
+          // If only 1 row, check if it's data or just header
+          const firstRow = rows[0].map((c) => String(c || '').toLowerCase());
+          const isOnlyHeader = firstRow.some((h) => h.includes('tanggal') || h.includes('id') || h.includes('ruang'));
+          if (!isOnlyHeader) {
+            return { rows, source: `Google Sheets GViz API${tab ? ` (${tab})` : ''}` };
+          }
+        }
+      } catch (e: any) {
+        errors.push(`GViz JSONP [${tab || 'default'}]: ${e.message}`);
       }
-    } catch (e: any) {
-      errors.push(`GViz Direct: ${e.message}`);
+    }
+  }
+
+  // Strategy C: GViz Direct JSON Fetch Multi-Tab
+  if (sheetId) {
+    for (const tab of tabsToTry) {
+      try {
+        const rows = await fetchGoogleSheetGVizDirect(sheetId, gid, tab);
+        if (rows && rows.length >= 2) {
+          const tabLabel = tab ? ` (${tab})` : '';
+          return { rows, source: `GViz Direct${tabLabel}` };
+        }
+      } catch (e: any) {
+        errors.push(`GViz Direct [${tab || 'default'}]: ${e.message}`);
+      }
     }
   }
 
@@ -463,32 +516,62 @@ export async function fetchAllGoogleSheetRawRows(
 
   // Strategy E: Direct CSV Export
   if (sheetId) {
-    try {
-      const gidParam = gid ? `&gid=${gid}` : '';
-      const csvExportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${gidParam}`;
-      const rows = await fetchGoogleSheetCsv(csvExportUrl);
-      if (rows && rows.length > 0) {
-        return { rows, source: 'CSV Export' };
+    for (const tab of tabsToTry.slice(0, 3)) {
+      try {
+        const gidParam = gid ? `&gid=${gid}` : '';
+        const sheetParam = tab ? `&sheet=${encodeURIComponent(tab)}` : '';
+        const csvExportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv${gidParam}${sheetParam}`;
+        const rows = await fetchGoogleSheetCsv(csvExportUrl);
+        if (rows && rows.length >= 2) {
+          return { rows, source: `CSV Export${tab ? ` (${tab})` : ''}` };
+        }
+      } catch (e: any) {
+        errors.push(`CSV Export [${tab}]: ${e.message}`);
       }
-    } catch (e: any) {
-      errors.push(`CSV Export: ${e.message}`);
     }
   }
 
   // Strategy F: CORS Proxy fallback
   if (sheetId) {
-    try {
-      const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json`;
-      const rows = await fetchGoogleSheetViaCorsProxy(gvizUrl);
-      if (rows && rows.length > 0) {
-        return { rows, source: 'CORS Proxy' };
+    for (const tab of ['Jadwal_Multimedia', '']) {
+      try {
+        const sheetParam = tab ? `&sheet=${encodeURIComponent(tab)}` : '';
+        const gvizUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:json${sheetParam}`;
+        const rows = await fetchGoogleSheetViaCorsProxy(gvizUrl);
+        if (rows && rows.length >= 2) {
+          return { rows, source: `CORS Proxy${tab ? ` (${tab})` : ''}` };
+        }
+      } catch (e: any) {
+        errors.push(`Proxy [${tab}]: ${e.message}`);
       }
-    } catch (e: any) {
-      errors.push(`Proxy: ${e.message}`);
     }
   }
 
-  throw new Error(`Tidak dapat mengambil data dari Spreadsheet. Rincian: ${errors.join('; ')}`);
+  throw new Error(`Tidak dapat membaca baris data jadwal dari Spreadsheet. Rincian: ${errors.slice(0, 3).join('; ')}`);
+}
+
+/**
+ * Helper to match header column accurately
+ */
+function findBestHeaderIndex(
+  headers: string[],
+  exactList: string[],
+  containsList: string[],
+  excludeList: string[] = []
+): number {
+  // 1. Exact match
+  for (const ex of exactList) {
+    const idx = headers.findIndex((h) => h === ex);
+    if (idx !== -1) return idx;
+  }
+  // 2. Contains match with exclusion filter
+  for (const ct of containsList) {
+    const idx = headers.findIndex(
+      (h) => h.includes(ct) && !excludeList.some((ex) => h.includes(ex))
+    );
+    if (idx !== -1) return idx;
+  }
+  return -1;
 }
 
 /**
@@ -536,49 +619,58 @@ export function parseGoogleSheetRowsToJadwal(
 
   if (hasHeaderKeywords) {
     startIndex = 1;
-    idIdx = firstRow.findIndex((h) => h === 'id' || h === 'id jadwal' || h.includes('id'));
-    tglIdx = firstRow.findIndex(
-      (h) => h.includes('tanggal') || h.includes('tgl') || h.includes('date') || h.includes('waktu')
+    // Accurate Header Mapping: Prevent 'waktu input' from overwriting 'tanggal'
+    tglIdx = findBestHeaderIndex(
+      firstRow,
+      ['tanggal', 'tgl', 'date'],
+      ['tanggal', 'tgl', 'date'],
+      ['input', 'sesi', 'jam', 'waktu input', 'timestamp', 'created']
     );
-    hariIdx = firstRow.findIndex((h) => h === 'hari' || h.includes('hari') || h.includes('day'));
-    jamIdx = firstRow.findIndex(
-      (h) => h.includes('jam') || h.includes('sesi') || h.includes('period') || h.includes('ke')
+    idIdx = findBestHeaderIndex(firstRow, ['id jadwal', 'id', 'kode'], ['id jadwal', 'id'], []);
+    hariIdx = findBestHeaderIndex(firstRow, ['hari', 'day'], ['hari', 'day'], []);
+    jamIdx = findBestHeaderIndex(
+      firstRow,
+      ['jam ke', 'jam', 'sesi'],
+      ['jam ke', 'jam', 'sesi', 'period'],
+      ['waktu', 'input', 'timestamp']
     );
-    ruangIdx = firstRow.findIndex(
-      (h) => h.includes('ruang') || h.includes('room') || h.includes('lab') || h.includes('tempat') || h.includes('lokasi')
+    ruangIdx = findBestHeaderIndex(
+      firstRow,
+      ['ruangan', 'ruang', 'lab', 'tempat'],
+      ['ruang', 'lab', 'room', 'tempat', 'lokasi'],
+      []
     );
-    guruIdx = firstRow.findIndex(
-      (h) =>
-        h.includes('guru') ||
-        h.includes('pengajar') ||
-        h.includes('teacher') ||
-        h.includes('ustadz') ||
-        h.includes('nama')
+    guruIdx = findBestHeaderIndex(
+      firstRow,
+      ['guru pengajar', 'guru', 'pengajar', 'nama guru'],
+      ['guru', 'pengajar', 'ustadz', 'teacher'],
+      ['nip', 'niy', 'nuptk']
     );
-    nipIdx = firstRow.findIndex((h) => h.includes('nip') || h.includes('niy') || h.includes('nuptk'));
-    mapelIdx = firstRow.findIndex(
-      (h) =>
-        h.includes('mata pelajaran') ||
-        h.includes('mapel') ||
-        h.includes('pelajaran') ||
-        h.includes('subject') ||
-        h.includes('kegiatan')
+    nipIdx = findBestHeaderIndex(firstRow, ['nip guru', 'nip', 'niy', 'nuptk'], ['nip', 'niy', 'nuptk'], []);
+    mapelIdx = findBestHeaderIndex(
+      firstRow,
+      ['mata pelajaran', 'mapel', 'pelajaran'],
+      ['mata pelajaran', 'mapel', 'pelajaran', 'subject', 'kegiatan'],
+      []
     );
-    kelasIdx = firstRow.findIndex(
-      (h) => h.includes('kelas') || h.includes('rombel') || h.includes('class') || h.includes('tingkat')
+    kelasIdx = findBestHeaderIndex(
+      firstRow,
+      ['kelas / rombel', 'kelas', 'rombel'],
+      ['kelas', 'rombel', 'tingkat', 'class'],
+      []
     );
-    keperluanIdx = firstRow.findIndex(
-      (h) =>
-        h.includes('keperluan') ||
-        h.includes('tujuan') ||
-        h.includes('materi') ||
-        h.includes('agenda') ||
-        h.includes('keterangan') ||
-        h.includes('deskripsi')
+    keperluanIdx = findBestHeaderIndex(
+      firstRow,
+      ['keperluan', 'tujuan', 'materi'],
+      ['keperluan', 'tujuan', 'materi', 'agenda', 'keterangan', 'deskripsi', 'catatan'],
+      []
     );
-    statusIdx = firstRow.findIndex((h) => h.includes('status') || h.includes('kondisi'));
-    pembuatIdx = firstRow.findIndex(
-      (h) => h.includes('dibuat') || h.includes('pembuat') || h.includes('created') || h.includes('operator')
+    statusIdx = findBestHeaderIndex(firstRow, ['status'], ['status', 'kondisi'], []);
+    pembuatIdx = findBestHeaderIndex(
+      firstRow,
+      ['dibuat oleh', 'pembuat', 'operator'],
+      ['dibuat', 'pembuat', 'operator', 'created'],
+      []
     );
   }
 
@@ -592,7 +684,7 @@ export function parseGoogleSheetRowsToJadwal(
     if (row.every((c) => c === null || c === undefined || String(c).trim() === '')) continue;
 
     // Retrieve fields with header-aware fallbacks
-    // Standard layout if header indices weren't found:
+    // Standard layout:
     // [0]: Timestamp, [1]: ID, [2]: Tanggal, [3]: Hari, [4]: Jam, [5]: Waktu, [6]: Ruang, [7]: Guru, [8]: NIP, [9]: Mapel, [10]: Kelas, [11]: Keperluan, [12]: Status, [13]: Pembuat
     const getVal = (idx: number, fallbackPos: number) => {
       if (idx >= 0 && idx < row.length && row[idx] !== undefined && row[idx] !== null) {
@@ -604,10 +696,10 @@ export function parseGoogleSheetRowsToJadwal(
       return '';
     };
 
-    const rawTanggal = getVal(tglIdx, 2) || getVal(tglIdx, 1);
+    const rawTanggal = getVal(tglIdx, 2);
     const rawHari = getVal(hariIdx, 3);
-    const rawJam = getVal(jamIdx, 4) || getVal(jamIdx, 3) || '1';
-    const rawRuangan = getVal(ruangIdx, 6) || getVal(ruangIdx, 5);
+    const rawJam = getVal(jamIdx, 4) || '1';
+    const rawRuangan = getVal(ruangIdx, 6);
     const rawGuru = getVal(guruIdx, 7);
     const rawNip = getVal(nipIdx, 8);
     const rawMapel = getVal(mapelIdx, 9);
@@ -632,17 +724,27 @@ export function parseGoogleSheetRowsToJadwal(
       (rg) =>
         rg.id.toLowerCase() === lowerRuang ||
         rg.nama_ruangan.toLowerCase() === lowerRuang ||
+        rg.nama_ruangan.toLowerCase().includes(lowerRuang) ||
+        (lowerRuang.length > 3 && lowerRuang.includes(rg.nama_ruangan.toLowerCase())) ||
         (lowerRuang.includes('lab') && rg.id === 'rng_labkom') ||
         (lowerRuang.includes('komputer') && rg.id === 'rng_labkom') ||
         (lowerRuang.includes('perpus') && rg.id === 'rng_perpus') ||
-        (lowerRuang.includes('pustaka') && rg.id === 'rng_perpus')
+        (lowerRuang.includes('pustaka') && rg.id === 'rng_perpus') ||
+        (lowerRuang.includes('audio') && rg.id === 'rng_audiovisual') ||
+        (lowerRuang.includes('visual') && rg.id === 'rng_audiovisual') ||
+        (lowerRuang.includes('studio') && rg.id === 'rng_studio_rekaman') ||
+        (lowerRuang.includes('rekam') && rg.id === 'rng_studio_rekaman')
     );
     if (foundRuangan) {
       resolvedRuanganId = foundRuangan.id;
     } else if (lowerRuang.includes('lab') || lowerRuang.includes('komputer')) {
       resolvedRuanganId = 'rng_labkom';
-    } else if (lowerRuang.includes('perpus')) {
+    } else if (lowerRuang.includes('perpus') || lowerRuang.includes('pustaka')) {
       resolvedRuanganId = 'rng_perpus';
+    } else if (lowerRuang.includes('audio') || lowerRuang.includes('visual')) {
+      resolvedRuanganId = 'rng_audiovisual';
+    } else if (lowerRuang.includes('studio') || lowerRuang.includes('rekam')) {
+      resolvedRuanganId = 'rng_studio_rekaman';
     } else if (ruanganList.length > 0 && !resolvedRuanganId) {
       resolvedRuanganId = ruanganList[0].id;
     }
@@ -655,7 +757,7 @@ export function parseGoogleSheetRowsToJadwal(
         g.id.toLowerCase() === lowerGuru ||
         g.nama_guru.toLowerCase() === lowerGuru ||
         g.nama_guru.toLowerCase().includes(lowerGuru) ||
-        (lowerGuru.length > 3 && lowerGuru.includes(g.nama_guru.toLowerCase())) ||
+        (lowerGuru.length > 4 && lowerGuru.includes(g.nama_guru.toLowerCase())) ||
         (rawNip && g.nip && g.nip === rawNip)
     );
     if (foundGuru) {
@@ -669,7 +771,8 @@ export function parseGoogleSheetRowsToJadwal(
       (k) =>
         k.id.toLowerCase() === rawKelas.toLowerCase() ||
         k.nama_kelas.toLowerCase() === rawKelas.toLowerCase() ||
-        k.nama_kelas.toLowerCase().includes(lowerKelas)
+        k.nama_kelas.toLowerCase().includes(lowerKelas) ||
+        (lowerKelas.length > 1 && lowerKelas.includes(k.nama_kelas.toLowerCase()))
     );
     if (foundKelas) {
       resolvedKelasId = foundKelas.id;
