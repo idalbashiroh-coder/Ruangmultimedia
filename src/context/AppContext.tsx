@@ -209,7 +209,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           googleSheetUrl: parsed.googleSheetUrl || INITIAL_SETTINGS.googleSheetUrl || '',
           googleSheetId: parsed.googleSheetId || parsed.googleSheetsId || INITIAL_SETTINGS.googleSheetId || '',
           googleSheetsId: parsed.googleSheetsId || parsed.googleSheetId || INITIAL_SETTINGS.googleSheetsId || '',
-          googleSheetsWebhookUrl: parsed.googleSheetsWebhookUrl || '',
+          googleSheetsWebhookUrl:
+            parsed.googleSheetsWebhookUrl && parsed.googleSheetsWebhookUrl.trim() !== ''
+              ? parsed.googleSheetsWebhookUrl
+              : INITIAL_SETTINGS.googleSheetsWebhookUrl,
           autoSyncSheets: parsed.autoSyncSheets !== undefined ? Boolean(parsed.autoSyncSheets) : true,
           autoRefreshTVSeconds: parsed.autoRefreshTVSeconds || 15,
         };
@@ -219,6 +222,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return INITIAL_SETTINGS;
   });
+
+  // Ensure default webhook is active if empty
+  useEffect(() => {
+    if (!settings.googleSheetsWebhookUrl && INITIAL_SETTINGS.googleSheetsWebhookUrl) {
+      setSettings((prev) => ({
+        ...prev,
+        googleSheetsWebhookUrl: INITIAL_SETTINGS.googleSheetsWebhookUrl,
+      }));
+    }
+  }, []);
 
   // UI state
   const [activeView, setActiveView] = useState<string>('dashboard');
@@ -363,7 +376,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
     });
 
-    setJadwalList((prev) => [...prev, ...newJadwals]);
+    const updatedList = [...jadwalList, ...newJadwals];
+    setJadwalList(updatedList);
 
     const guruName = guruList.find((g) => g.id === data.guru_id)?.nama_guru || 'Guru';
     const ruanganName = ruanganList.find((r) => r.id === data.ruangan_id)?.nama_ruangan || 'Ruangan';
@@ -374,9 +388,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
 
     // Auto sync to webhook if enabled
-    if (settings.autoSyncSheets && settings.googleSheetsWebhookUrl) {
-      const webhookUrl = settings.googleSheetsWebhookUrl.trim();
-      if (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://')) {
+    if (settings.autoSyncSheets) {
+      const webhookUrl = settings.googleSheetsWebhookUrl?.trim() || INITIAL_SETTINGS.googleSheetsWebhookUrl;
+      if (webhookUrl && (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://'))) {
         const payloadData = newJadwals.map((j) => {
           const guru = guruList.find((g) => g.id === j.guru_id);
           const kelas = kelasList.find((k) => k.id === j.kelas_id);
@@ -453,20 +467,60 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const calculatedHari = data.tanggal ? getHariNameFromDate(data.tanggal) : existing.hari;
 
-    setJadwalList((prev) =>
-      prev.map((j) =>
-        j.id === id
-          ? {
-              ...j,
-              ...data,
-              hari: (data.hari || calculatedHari) as HariType,
-              updated_at: new Date().toISOString(),
-            }
-          : j
-      )
+    const nextJadwalList = jadwalList.map((j) =>
+      j.id === id
+        ? {
+            ...j,
+            ...data,
+            hari: (data.hari || calculatedHari) as HariType,
+            updated_at: new Date().toISOString(),
+          }
+        : j
     );
+    setJadwalList(nextJadwalList);
 
     addLog('UBAH_JADWAL', 'Jadwal', `Mengubah jadwal ID: ${id} (${existing.mata_pelajaran})`, id);
+
+    // Auto sync updated state to webhook
+    if (settings.autoSyncSheets) {
+      const webhookUrl = settings.googleSheetsWebhookUrl?.trim() || INITIAL_SETTINGS.googleSheetsWebhookUrl;
+      if (webhookUrl && (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://'))) {
+        const fullPayload = nextJadwalList.map((j) => {
+          const guru = guruList.find((g) => g.id === j.guru_id);
+          const kelas = kelasList.find((k) => k.id === j.kelas_id);
+          const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
+          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          return {
+            id: j.id,
+            tanggal: j.tanggal,
+            hari: j.hari,
+            jam_ke: j.jam_ke,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
+            ruangan: ruangan?.nama_ruangan || 'Ruangan',
+            guru: guru?.nama_guru || 'Guru',
+            nip_guru: guru?.nip || '-',
+            mata_pelajaran: j.mata_pelajaran,
+            kelas: kelas?.nama_kelas || 'Kelas',
+            keperluan: j.keperluan || '-',
+            status: j.status,
+            pembuat: j.created_by_name || 'Guru',
+            created_at: j.created_at,
+          };
+        });
+
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'SYNC_ALL',
+            timestamp: new Date().toISOString(),
+            data: fullPayload,
+          }),
+        }).catch((err) => console.warn('Auto webhook sync notice:', err));
+      }
+    }
+
     return { success: true, message: 'Jadwal berhasil diperbarui.' };
   };
 
@@ -475,13 +529,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const target = jadwalList.find((j) => j.id === id);
     if (!target) return { success: false, message: 'Jadwal tidak ditemukan.' };
 
-    setJadwalList((prev) => prev.filter((j) => j.id !== id));
+    const nextJadwalList = jadwalList.filter((j) => j.id !== id);
+    setJadwalList(nextJadwalList);
     addLog(
       'HAPUS_JADWAL',
       'Jadwal',
       `Menghapus jadwal ${target.tanggal} Jam ke-${target.jam_ke} (${target.mata_pelajaran})`,
       id
     );
+
+    if (settings.autoSyncSheets) {
+      const webhookUrl = settings.googleSheetsWebhookUrl?.trim() || INITIAL_SETTINGS.googleSheetsWebhookUrl;
+      if (webhookUrl && (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://'))) {
+        const fullPayload = nextJadwalList.map((j) => {
+          const guru = guruList.find((g) => g.id === j.guru_id);
+          const kelas = kelasList.find((k) => k.id === j.kelas_id);
+          const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
+          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          return {
+            id: j.id,
+            tanggal: j.tanggal,
+            hari: j.hari,
+            jam_ke: j.jam_ke,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
+            ruangan: ruangan?.nama_ruangan || 'Ruangan',
+            guru: guru?.nama_guru || 'Guru',
+            nip_guru: guru?.nip || '-',
+            mata_pelajaran: j.mata_pelajaran,
+            kelas: kelas?.nama_kelas || 'Kelas',
+            keperluan: j.keperluan || '-',
+            status: j.status,
+            pembuat: j.created_by_name || 'Guru',
+            created_at: j.created_at,
+          };
+        });
+
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'SYNC_ALL',
+            timestamp: new Date().toISOString(),
+            data: fullPayload,
+          }),
+        }).catch((err) => console.warn('Auto webhook sync notice:', err));
+      }
+    }
+
     return { success: true, message: 'Jadwal peminjam berhasil dihapus secara permanen.' };
   };
 
@@ -490,6 +585,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const total = jadwalList.length;
     setJadwalList([]);
     addLog('RESET_DATA', 'Jadwal', `Mengosongkan seluruh database jadwal peminjam (${total} entri dihapus).`);
+
+    if (settings.autoSyncSheets) {
+      const webhookUrl = settings.googleSheetsWebhookUrl?.trim() || INITIAL_SETTINGS.googleSheetsWebhookUrl;
+      if (webhookUrl && (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://'))) {
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'SYNC_ALL',
+            timestamp: new Date().toISOString(),
+            data: [],
+          }),
+        }).catch((err) => console.warn('Auto webhook sync notice:', err));
+      }
+    }
+
     return {
       success: true,
       message: `Seluruh database jadwal peminjam (${total} entri) berhasil dikosongkan.`,
@@ -501,31 +613,109 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const existing = jadwalList.find((j) => j.id === id);
     if (!existing) return { success: false, message: 'Jadwal tidak ditemukan.' };
 
-    setJadwalList((prev) =>
-      prev.map((j) =>
-        j.id === id
-          ? {
-              ...j,
-              status: 'Dibatalkan',
-              keperluan: alasan ? `[DIBATALKAN: ${alasan}] ${j.keperluan || ''}` : j.keperluan,
-              updated_at: new Date().toISOString(),
-            }
-          : j
-      )
+    const nextJadwalList = jadwalList.map((j) =>
+      j.id === id
+        ? {
+            ...j,
+            status: 'Dibatalkan' as const,
+            keperluan: alasan ? `[DIBATALKAN: ${alasan}] ${j.keperluan || ''}` : j.keperluan,
+            updated_at: new Date().toISOString(),
+          }
+        : j
     );
+    setJadwalList(nextJadwalList);
 
     addLog('BATAL_JADWAL', 'Jadwal', `Membatalkan jadwal: ${existing.mata_pelajaran} (${existing.tanggal} Jam ke-${existing.jam_ke})`, id);
+
+    if (settings.autoSyncSheets) {
+      const webhookUrl = settings.googleSheetsWebhookUrl?.trim() || INITIAL_SETTINGS.googleSheetsWebhookUrl;
+      if (webhookUrl && (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://'))) {
+        const fullPayload = nextJadwalList.map((j) => {
+          const guru = guruList.find((g) => g.id === j.guru_id);
+          const kelas = kelasList.find((k) => k.id === j.kelas_id);
+          const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
+          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          return {
+            id: j.id,
+            tanggal: j.tanggal,
+            hari: j.hari,
+            jam_ke: j.jam_ke,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
+            ruangan: ruangan?.nama_ruangan || 'Ruangan',
+            guru: guru?.nama_guru || 'Guru',
+            nip_guru: guru?.nip || '-',
+            mata_pelajaran: j.mata_pelajaran,
+            kelas: kelas?.nama_kelas || 'Kelas',
+            keperluan: j.keperluan || '-',
+            status: j.status,
+            pembuat: j.created_by_name || 'Guru',
+            created_at: j.created_at,
+          };
+        });
+
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'SYNC_ALL',
+            timestamp: new Date().toISOString(),
+            data: fullPayload,
+          }),
+        }).catch((err) => console.warn('Auto webhook sync notice:', err));
+      }
+    }
+
     return { success: true, message: 'Jadwal berhasil dibatalkan.' };
   };
 
   // Complete schedule
   const completeJadwal = (id: string) => {
-    setJadwalList((prev) =>
-      prev.map((j) =>
-        j.id === id ? { ...j, status: 'Selesai', updated_at: new Date().toISOString() } : j
-      )
+    const nextJadwalList = jadwalList.map((j) =>
+      j.id === id ? { ...j, status: 'Selesai' as const, updated_at: new Date().toISOString() } : j
     );
+    setJadwalList(nextJadwalList);
     addLog('SELESAI_JADWAL', 'Jadwal', `Menandai jadwal selesai (ID: ${id})`, id);
+
+    if (settings.autoSyncSheets) {
+      const webhookUrl = settings.googleSheetsWebhookUrl?.trim() || INITIAL_SETTINGS.googleSheetsWebhookUrl;
+      if (webhookUrl && (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://'))) {
+        const fullPayload = nextJadwalList.map((j) => {
+          const guru = guruList.find((g) => g.id === j.guru_id);
+          const kelas = kelasList.find((k) => k.id === j.kelas_id);
+          const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
+          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          return {
+            id: j.id,
+            tanggal: j.tanggal,
+            hari: j.hari,
+            jam_ke: j.jam_ke,
+            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : `Jam ke-${j.jam_ke}`,
+            ruangan: ruangan?.nama_ruangan || 'Ruangan',
+            guru: guru?.nama_guru || 'Guru',
+            nip_guru: guru?.nip || '-',
+            mata_pelajaran: j.mata_pelajaran,
+            kelas: kelas?.nama_kelas || 'Kelas',
+            keperluan: j.keperluan || '-',
+            status: j.status,
+            pembuat: j.created_by_name || 'Guru',
+            created_at: j.created_at,
+          };
+        });
+
+        fetch(webhookUrl, {
+          method: 'POST',
+          mode: 'no-cors',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'SYNC_ALL',
+            timestamp: new Date().toISOString(),
+            data: fullPayload,
+          }),
+        }).catch((err) => console.warn('Auto webhook sync notice:', err));
+      }
+    }
+
     return { success: true, message: 'Status jadwal diubah menjadi Selesai.' };
   };
 

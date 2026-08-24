@@ -42,7 +42,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   googleSheetUrl: 'https://docs.google.com/spreadsheets/d/1q5bPQaDv5K067p9bvmZrl4Efy52O5IRg-pioPUyQbnE/edit?usp=sharing',
   googleSheetId: '1q5bPQaDv5K067p9bvmZrl4Efy52O5IRg-pioPUyQbnE',
   googleSheetsId: '1q5bPQaDv5K067p9bvmZrl4Efy52O5IRg-pioPUyQbnE',
-  googleSheetsWebhookUrl: '',
+  googleSheetsWebhookUrl: 'https://script.google.com/macros/s/AKfycbxIGbrYQBvOEQ0e7V8-icSOsUpBuWPADh5oVwoWMuta1ItBE1_mtDaAU_kEkIw7-eIvcA/exec',
   autoSyncSheets: true,
   autoRefreshTVSeconds: 15,
 };
