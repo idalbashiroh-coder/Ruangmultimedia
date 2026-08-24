@@ -1,0 +1,6 @@
+{
+  "name": "Sistem Penjadwalan Ruangan Multimedia",
+  "description": "Sistem Penjadwalan Ruangan Multimedia SMA - SMP IT Albashiroh Turen untuk pengelolaan reservasi Ruang Perpustakaan & Lab. Komputer dengan fitur pencegahan bentrok otomatis, kalender mingguan, ekspor laporan, dan Smart TV display.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
