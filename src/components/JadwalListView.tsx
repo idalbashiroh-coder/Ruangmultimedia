@@ -3,18 +3,21 @@ import {
   AlertCircle,
   AlertTriangle,
   Calendar,
+  CalendarDays,
   CheckCircle2,
   Download,
   Edit2,
   Filter,
   PlusCircle,
   Printer,
+  RefreshCw,
   Search,
   Trash2,
   X,
   XCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { getDateOfCurrentWeek } from '../data/initialData';
 import { Jadwal } from '../types';
 import { exportJadwalToExcel, exportJadwalToPDF } from '../utils/exportUtils';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
@@ -25,6 +28,7 @@ export const JadwalListView: React.FC = () => {
     guruList,
     kelasList,
     ruanganList,
+    selectedWeekOffset,
     setIsBookingModalOpen,
     setEditingJadwal,
     setPrefilledBooking,
@@ -34,13 +38,15 @@ export const JadwalListView: React.FC = () => {
     completeJadwal,
     currentUser,
     settings,
+    fetchFromGoogleSheets,
+    isSyncingSheets,
   } = useApp();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRuangan, setFilterRuangan] = useState('ALL');
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [filterHari, setFilterHari] = useState('ALL');
-  const [filterMonth, setFilterMonth] = useState('ALL');
+  const [filterWeekScope, setFilterWeekScope] = useState<'ALL' | 'CURRENT_WEEK'>('ALL');
 
   // Deletion modals
   const [deletingJadwal, setDeletingJadwal] = useState<Jadwal | null>(null);
@@ -56,14 +62,26 @@ export const JadwalListView: React.FC = () => {
   const kelasMap = useMemo(() => new Map(kelasList.map((k) => [k.id, k.nama_kelas])), [kelasList]);
   const ruanganMap = useMemo(() => new Map(ruanganList.map((r) => [r.id, r.nama_ruangan])), [ruanganList]);
 
+  // Current calendar week dates
+  const mondayDate = useMemo(
+    () => getDateOfCurrentWeek('Senin', selectedWeekOffset),
+    [selectedWeekOffset]
+  );
+  const saturdayDate = useMemo(
+    () => getDateOfCurrentWeek('Sabtu', selectedWeekOffset),
+    [selectedWeekOffset]
+  );
+
   // Filtered schedules
   const filteredJadwal = useMemo(() => {
     return jadwalList
       .filter((j) => {
+        if (filterWeekScope === 'CURRENT_WEEK') {
+          if (j.tanggal < mondayDate || j.tanggal > saturdayDate) return false;
+        }
         if (filterRuangan !== 'ALL' && j.ruangan_id !== filterRuangan) return false;
         if (filterStatus !== 'ALL' && j.status !== filterStatus) return false;
         if (filterHari !== 'ALL' && j.hari !== filterHari) return false;
-        if (filterMonth !== 'ALL' && !j.tanggal.startsWith(filterMonth)) return false;
 
         if (searchTerm.trim()) {
           const term = searchTerm.toLowerCase();
@@ -85,7 +103,18 @@ export const JadwalListView: React.FC = () => {
         return true;
       })
       .sort((a, b) => b.tanggal.localeCompare(a.tanggal) || a.jam_ke - b.jam_ke);
-  }, [jadwalList, filterRuangan, filterStatus, filterHari, filterMonth, searchTerm, guruMap, kelasMap]);
+  }, [
+    jadwalList,
+    filterWeekScope,
+    mondayDate,
+    saturdayDate,
+    filterRuangan,
+    filterStatus,
+    filterHari,
+    searchTerm,
+    guruMap,
+    kelasMap,
+  ]);
 
   const handleExportPDF = () => {
     exportJadwalToPDF(
@@ -133,15 +162,28 @@ export const JadwalListView: React.FC = () => {
       {/* Header */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
         <div>
-          <h2 className="text-lg font-bold text-slate-900 font-display">
-            Daftar Seluruh Jadwal Penggunaan Ruangan
+          <h2 className="text-lg font-bold text-slate-900 font-display flex items-center gap-2">
+            <span>Daftar Seluruh Jadwal Penggunaan Ruangan</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+              {filteredJadwal.length} Jadwal
+            </span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Total {filteredJadwal.length} dari {jadwalList.length} riwayat jadwal peminjam tercatat.
+            Menampilkan data reservasi yang tersimpan dan tersinkronisasi otomatis dengan Google Spreadsheet & Matriks Kalender.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => fetchFromGoogleSheets(false)}
+            disabled={isSyncingSheets}
+            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50"
+            title="Sinkronkan data dari Google Spreadsheet"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin text-emerald-600' : ''}`} />
+            <span>{isSyncingSheets ? 'Menyinkronkan...' : 'Sinkronkan'}</span>
+          </button>
+
           {currentUser?.role === 'admin' && jadwalList.length > 0 && (
             <button
               id="btn-clear-jadwal-database"
@@ -150,26 +192,31 @@ export const JadwalListView: React.FC = () => {
               title="Hapus seluruh database jadwal peminjaman ruangan"
             >
               <Trash2 className="w-3.5 h-3.5 text-red-600" />
-              <span>Hapus Database Jadwal</span>
+              <span>Kosongkan Jadwal</span>
             </button>
           )}
 
-          <button
-            id="btn-export-excel-list"
-            onClick={handleExportExcel}
-            className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all flex items-center gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Export Excel</span>
-          </button>
-          <button
-            id="btn-export-pdf-list"
-            onClick={handleExportPDF}
-            className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center gap-1.5"
-          >
-            <Download className="w-3.5 h-3.5 text-rose-400" />
-            <span>Export PDF</span>
-          </button>
+          {filteredJadwal.length > 0 && (
+            <>
+              <button
+                id="btn-export-excel-list"
+                onClick={handleExportExcel}
+                className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Export Excel</span>
+              </button>
+              <button
+                id="btn-export-pdf-list"
+                onClick={handleExportPDF}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center gap-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-rose-400" />
+                <span>Export PDF</span>
+              </button>
+            </>
+          )}
+
           <button
             id="btn-add-jadwal-list"
             onClick={() => {
@@ -186,7 +233,7 @@ export const JadwalListView: React.FC = () => {
 
       {/* Filter and Search Bar */}
       <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
           {/* Search Input */}
           <div className="sm:col-span-2 relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -197,6 +244,18 @@ export const JadwalListView: React.FC = () => {
               placeholder="Cari guru, mapel, kelas, atau keperluan..."
               className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:bg-white"
             />
+          </div>
+
+          {/* Week Scope Filter */}
+          <div>
+            <select
+              value={filterWeekScope}
+              onChange={(e) => setFilterWeekScope(e.target.value as 'ALL' | 'CURRENT_WEEK')}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="ALL">Semua Jadwal</option>
+              <option value="CURRENT_WEEK">Pekan Kalender Ini</option>
+            </select>
           </div>
 
           {/* Ruangan Filter */}
@@ -248,31 +307,71 @@ export const JadwalListView: React.FC = () => {
         </div>
       </div>
 
-      {/* Schedule Table */}
-      <div className="overflow-x-auto rounded-2xl bg-white border border-slate-200 shadow-xs">
-        <table className="w-full min-w-[850px] text-left text-xs">
-          <thead>
-            <tr className="bg-slate-900 text-white font-bold uppercase tracking-wider">
-              <th className="p-3.5 text-center w-12">No</th>
-              <th className="p-3.5">Tanggal / Hari</th>
-              <th className="p-3.5 text-center">Jam</th>
-              <th className="p-3.5">Ruangan</th>
-              <th className="p-3.5">Guru Pengajar</th>
-              <th className="p-3.5">Mata Pelajaran & Kelas</th>
-              <th className="p-3.5">Keperluan</th>
-              <th className="p-3.5 text-center">Status</th>
-              <th className="p-3.5 text-center">Aksi</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-200">
-            {filteredJadwal.length === 0 ? (
-              <tr>
-                <td colSpan={9} className="p-8 text-center text-slate-400 text-xs">
-                  Tidak ada jadwal yang sesuai dengan filter pencarian.
-                </td>
+      {/* Schedule Table / Empty State */}
+      {jadwalList.length === 0 ? (
+        <div className="p-12 rounded-2xl bg-white border border-slate-200 shadow-xs text-center space-y-4">
+          <div className="w-16 h-16 rounded-2xl bg-slate-100 border border-slate-200 flex items-center justify-center mx-auto text-slate-400">
+            <CalendarDays className="w-8 h-8" />
+          </div>
+          <div className="max-w-md mx-auto space-y-1.5">
+            <h3 className="text-base font-bold text-slate-900 font-display">
+              Tidak Ada Jadwal Terdaftar
+            </h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Matriks kalender mingguan dan daftar seluruh jadwal saat ini dalam keadaan kosong (0 jadwal). Ketika terdapat isian baru dari Google Spreadsheet atau form pemesanan, data akan langsung otomatis tampil di sini.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setPrefilledBooking(null);
+              setIsBookingModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-sm"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>Tambah Jadwal Baru Sekarang</span>
+          </button>
+        </div>
+      ) : filteredJadwal.length === 0 ? (
+        <div className="p-10 rounded-2xl bg-white border border-slate-200 shadow-xs text-center space-y-3">
+          <AlertCircle className="w-8 h-8 text-amber-500 mx-auto" />
+          <h3 className="text-sm font-bold text-slate-800">
+            Tidak Ada Jadwal yang Cocok
+          </h3>
+          <p className="text-xs text-slate-500">
+            Tidak ditemukan data jadwal yang sesuai dengan filter pencarian aktif.
+          </p>
+          <button
+            onClick={() => {
+              setSearchTerm('');
+              setFilterRuangan('ALL');
+              setFilterStatus('ALL');
+              setFilterHari('ALL');
+              setFilterWeekScope('ALL');
+            }}
+            className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold"
+          >
+            Reset Filter Pencarian
+          </button>
+        </div>
+      ) : (
+        <div className="overflow-x-auto rounded-2xl bg-white border border-slate-200 shadow-xs">
+          <table className="w-full min-w-[850px] text-left text-xs">
+            <thead>
+              <tr className="bg-slate-900 text-white font-bold uppercase tracking-wider">
+                <th className="p-3.5 text-center w-12">No</th>
+                <th className="p-3.5">Tanggal / Hari</th>
+                <th className="p-3.5 text-center">Jam</th>
+                <th className="p-3.5">Ruangan</th>
+                <th className="p-3.5">Guru Pengajar</th>
+                <th className="p-3.5">Mata Pelajaran & Kelas</th>
+                <th className="p-3.5">Keperluan</th>
+                <th className="p-3.5 text-center">Status</th>
+                <th className="p-3.5 text-center">Aksi</th>
               </tr>
-            ) : (
-              filteredJadwal.map((j, idx) => {
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {filteredJadwal.map((j, idx) => {
                 const isPerpus = j.ruangan_id === 'rng_perpus';
 
                 return (
@@ -364,11 +463,11 @@ export const JadwalListView: React.FC = () => {
                     </td>
                   </tr>
                 );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Single Schedule Delete Confirmation Modal */}
       <ConfirmDeleteModal

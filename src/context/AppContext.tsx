@@ -134,14 +134,14 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  USERS: 'albashiroh_multimedia_users_v1',
-  GURU: 'albashiroh_multimedia_guru_v1',
+  USERS: 'albashiroh_multimedia_users_v2',
+  GURU: 'albashiroh_multimedia_guru_v2',
   KELAS: 'albashiroh_multimedia_kelas_v1',
   RUANGAN: 'albashiroh_multimedia_ruangan_v1',
   JADWAL: 'albashiroh_multimedia_jadwal_v1',
   LOGS: 'albashiroh_multimedia_logs_v1',
   SETTINGS: 'albashiroh_multimedia_settings_v1',
-  CURRENT_USER: 'albashiroh_multimedia_current_user_v1',
+  CURRENT_USER: 'albashiroh_multimedia_current_user_v2',
 };
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -165,7 +165,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const [guruList, setGuruList] = useState<Guru[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.GURU);
-    return saved ? JSON.parse(saved) : INITIAL_GURU;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length >= 22) {
+          return parsed;
+        }
+      } catch {
+        return INITIAL_GURU;
+      }
+    }
+    return INITIAL_GURU;
   });
 
   const [kelasList, setKelasList] = useState<Kelas[]>(() => {

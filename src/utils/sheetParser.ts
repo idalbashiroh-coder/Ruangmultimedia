@@ -221,16 +221,15 @@ export function parseGVizResponseToRows(gvizData: any): any[][] {
 
   const result: any[][] = [];
 
-  // Header row
-  const headerRow: string[] = cols.map((col: any) => {
-    if (col && col.label && String(col.label).trim() !== '') {
-      return String(col.label).trim();
-    }
-    return col && col.id ? String(col.id).trim() : '';
-  });
+  // Check if cols contain real user-defined labels (not just empty or default column letters)
+  const hasRealColLabels = cols.some(
+    (col: any) => col && typeof col.label === 'string' && col.label.trim().length > 0
+  );
 
-  const hasHeaderLabels = headerRow.some((h) => h !== '');
-  if (hasHeaderLabels) {
+  if (hasRealColLabels) {
+    const headerRow: string[] = cols.map((col: any) =>
+      col && col.label ? String(col.label).trim() : ''
+    );
     result.push(headerRow);
   }
 
@@ -267,6 +266,9 @@ export function fetchGoogleSheetGVizJsonp(
   timeoutMs: number = 7000
 ): Promise<any[][]> {
   return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+      return reject(new Error('JSONP requires DOM environment'));
+    }
     if (!sheetId) {
       return reject(new Error('Sheet ID tidak tersedia'));
     }
@@ -464,21 +466,28 @@ export async function fetchAllGoogleSheetRawRows(
     }
   }
 
+  let emptySheetFallback: { rows: any[][]; source: string } | null = null;
+
   // Strategy B: GViz JSONP Multi-Tab Scanning (Guaranteed zero CORS issues)
   if (sheetId) {
     for (const tab of tabsToTry) {
       try {
-        const rows = await fetchGoogleSheetGVizJsonp(sheetId, gid, tab, 5000);
-        // A valid table has at least 1 row of real data (row 0 header + row 1 data or at least data rows)
+        const rows = await fetchGoogleSheetGVizJsonp(sheetId, gid, tab, 4000);
+        const tabLabel = tab ? ` (${tab})` : '';
+        // A valid table with data rows
         if (rows && rows.length >= 2) {
-          const tabLabel = tab ? ` (${tab})` : '';
           return { rows, source: `Google Sheets GViz API${tabLabel}` };
         } else if (rows && rows.length === 1) {
-          // If only 1 row, check if it's data or just header
           const firstRow = rows[0].map((c) => String(c || '').toLowerCase());
-          const isOnlyHeader = firstRow.some((h) => h.includes('tanggal') || h.includes('id') || h.includes('ruang'));
-          if (!isOnlyHeader) {
-            return { rows, source: `Google Sheets GViz API${tab ? ` (${tab})` : ''}` };
+          const hasHeader = firstRow.some(
+            (h) => h.includes('tanggal') || h.includes('ruang') || h.includes('guru') || h.includes('jadwal')
+          );
+          if (hasHeader) {
+            // Valid schedule sheet with 0 bookings
+            return { rows, source: `Google Sheets GViz API${tabLabel}` };
+          }
+          if (!emptySheetFallback) {
+            emptySheetFallback = { rows, source: `Google Sheets GViz API${tabLabel}` };
           }
         }
       } catch (e: any) {
@@ -492,9 +501,20 @@ export async function fetchAllGoogleSheetRawRows(
     for (const tab of tabsToTry) {
       try {
         const rows = await fetchGoogleSheetGVizDirect(sheetId, gid, tab);
+        const tabLabel = tab ? ` (${tab})` : '';
         if (rows && rows.length >= 2) {
-          const tabLabel = tab ? ` (${tab})` : '';
           return { rows, source: `GViz Direct${tabLabel}` };
+        } else if (rows && rows.length === 1) {
+          const firstRow = rows[0].map((c) => String(c || '').toLowerCase());
+          const hasHeader = firstRow.some(
+            (h) => h.includes('tanggal') || h.includes('ruang') || h.includes('guru') || h.includes('jadwal')
+          );
+          if (hasHeader) {
+            return { rows, source: `GViz Direct${tabLabel}` };
+          }
+          if (!emptySheetFallback) {
+            emptySheetFallback = { rows, source: `GViz Direct${tabLabel}` };
+          }
         }
       } catch (e: any) {
         errors.push(`GViz Direct [${tab || 'default'}]: ${e.message}`);
@@ -506,8 +526,10 @@ export async function fetchAllGoogleSheetRawRows(
   if (webhookUrl && webhookUrl.startsWith('http')) {
     try {
       const rows = await fetchGoogleSheetViaWebhook(webhookUrl);
-      if (rows && rows.length > 0) {
+      if (rows && rows.length >= 2) {
         return { rows, source: 'Apps Script Webhook' };
+      } else if (rows && rows.length >= 1 && !emptySheetFallback) {
+        emptySheetFallback = { rows, source: 'Apps Script Webhook' };
       }
     } catch (e: any) {
       errors.push(`Webhook GET: ${e.message}`);
@@ -524,6 +546,8 @@ export async function fetchAllGoogleSheetRawRows(
         const rows = await fetchGoogleSheetCsv(csvExportUrl);
         if (rows && rows.length >= 2) {
           return { rows, source: `CSV Export${tab ? ` (${tab})` : ''}` };
+        } else if (rows && rows.length >= 1 && !emptySheetFallback) {
+          emptySheetFallback = { rows, source: `CSV Export${tab ? ` (${tab})` : ''}` };
         }
       } catch (e: any) {
         errors.push(`CSV Export [${tab}]: ${e.message}`);
@@ -540,11 +564,18 @@ export async function fetchAllGoogleSheetRawRows(
         const rows = await fetchGoogleSheetViaCorsProxy(gvizUrl);
         if (rows && rows.length >= 2) {
           return { rows, source: `CORS Proxy${tab ? ` (${tab})` : ''}` };
+        } else if (rows && rows.length >= 1 && !emptySheetFallback) {
+          emptySheetFallback = { rows, source: `CORS Proxy${tab ? ` (${tab})` : ''}` };
         }
       } catch (e: any) {
         errors.push(`Proxy [${tab}]: ${e.message}`);
       }
     }
+  }
+
+  // If sheet connected successfully and is empty (only header or 0 bookings)
+  if (emptySheetFallback) {
+    return emptySheetFallback;
   }
 
   throw new Error(`Tidak dapat membaca baris data jadwal dari Spreadsheet. Rincian: ${errors.slice(0, 3).join('; ')}`);
