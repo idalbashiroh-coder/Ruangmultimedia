@@ -8,6 +8,7 @@ import { JadwalFormModal } from './components/JadwalFormModal';
 import { JadwalListView } from './components/JadwalListView';
 import { LaporanView } from './components/LaporanView';
 import { LoginModal } from './components/LoginModal';
+import { GoogleSheetsModal } from './components/GoogleSheetsModal';
 import { Navbar } from './components/Navbar';
 import { PengaturanView } from './components/PengaturanView';
 import { PublicJadwalView } from './components/PublicJadwalView';
@@ -27,6 +28,7 @@ const AppContent: React.FC = () => {
         <SmartTvDisplayView />
         <JadwalFormModal />
         <LoginModal />
+        <GoogleSheetsModal />
       </>
     );
   }
@@ -38,6 +40,7 @@ const AppContent: React.FC = () => {
         <PublicJadwalView />
         <JadwalFormModal />
         <LoginModal />
+        <GoogleSheetsModal />
       </>
     );
   }
@@ -88,6 +91,7 @@ const AppContent: React.FC = () => {
       {/* Global Modals */}
       <JadwalFormModal />
       <LoginModal />
+      <GoogleSheetsModal />
     </div>
   );
 };

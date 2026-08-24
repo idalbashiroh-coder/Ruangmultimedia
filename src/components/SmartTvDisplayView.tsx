@@ -89,6 +89,13 @@ export const SmartTvDisplayView: React.FC = () => {
                 <Radio className="w-3 h-3 animate-pulse text-emerald-400" />
                 <span>Live Digital Signage</span>
               </span>
+              <span className="px-2 py-0.5 rounded bg-teal-500/20 text-teal-300 font-mono text-[11px] font-bold flex items-center gap-1.5 border border-teal-500/30">
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teal-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-teal-400"></span>
+                </span>
+                <span>Auto-Sync Realtime</span>
+              </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white font-display">
               {settings.namaAplikasi}

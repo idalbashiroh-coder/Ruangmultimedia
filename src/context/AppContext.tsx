@@ -22,7 +22,11 @@ import {
   User,
   UserRole,
 } from '../types';
-import { parseGoogleSheetCsvToJadwal } from '../utils/sheetParser';
+import {
+  fetchAllGoogleSheetRawRows,
+  parseGoogleSheetCsvToJadwal,
+  parseGoogleSheetRowsToJadwal,
+} from '../utils/sheetParser';
 
 interface ConflictCheckResult {
   hasConflict: boolean;
@@ -118,8 +122,12 @@ interface AppContextType {
   lastSheetsSyncTime: string | null;
   lastSyncTime: string | null;
   isSyncingSheets: boolean;
+  isRealtimeConnected: boolean;
   syncWithSheets: () => Promise<{ success: boolean; message: string }>;
-  fetchFromGoogleSheets: () => Promise<{ success: boolean; count: number; message: string }>;
+  fetchFromGoogleSheets: (
+    isSilent?: boolean,
+    customSheetInput?: string
+  ) => Promise<{ success: boolean; count: number; message: string }>;
 }
 
 
@@ -259,6 +267,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [editingJadwal, setEditingJadwal] = useState<Jadwal | null>(null);
   const [prefilledBooking, setPrefilledBooking] = useState<Partial<Jadwal> | null>(null);
   const [lastSheetsSyncTime, setLastSheetsSyncTime] = useState<string | null>(null);
+  const [isRealtimeConnected, setIsRealtimeConnected] = useState<boolean>(false);
 
   // Sync to localStorage
   useEffect(() => {
@@ -1023,56 +1032,143 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  // Fetch real schedule rows directly from published Google Sheets CSV
-  const fetchFromGoogleSheets = async () => {
-    const sheetId = (settings.googleSheetId || settings.googleSheetsId || '').trim();
-    if (!sheetId) {
-      return {
-        success: false,
-        count: 0,
-        message: 'Google Sheet ID belum dikonfigurasi.',
-      };
+  // Fetch real schedule rows directly from published Google Sheets (GViz API, Webhook, or CSV)
+  const fetchFromGoogleSheets = async (
+    isSilent: boolean = false,
+    customSheetInput?: string
+  ): Promise<{ success: boolean; count: number; message: string }> => {
+    const sheetInput = (
+      customSheetInput ||
+      settings.googleSheetUrl ||
+      settings.googleSheetId ||
+      settings.googleSheetsId ||
+      ''
+    ).trim();
+    const webhookUrl = (settings.googleSheetsWebhookUrl || '').trim();
+
+    if (!sheetInput && !webhookUrl) {
+      if (!isSilent) {
+        return {
+          success: false,
+          count: 0,
+          message: 'Google Sheet ID atau Webhook URL belum dikonfigurasi.',
+        };
+      }
+      return { success: false, count: 0, message: '' };
+    }
+
+    if (!isSilent) {
+      setIsSyncingSheets(true);
     }
 
     try {
-      setIsSyncingSheets(true);
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
-      const response = await fetch(csvUrl);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const csvText = await response.text();
-      const parsedJadwal = parseGoogleSheetCsvToJadwal(csvText, guruList, kelasList, ruanganList);
+      const { rows, source } = await fetchAllGoogleSheetRawRows(sheetInput, webhookUrl);
+      const parsedJadwal = parseGoogleSheetRowsToJadwal(rows, guruList, kelasList, ruanganList);
 
-      // Only contain what is strictly in the spreadsheet; if empty, keep it empty
-      setJadwalList(parsedJadwal);
+      setIsRealtimeConnected(true);
       const syncTime = new Date().toLocaleTimeString('id-ID', {
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
       });
       setLastSheetsSyncTime(syncTime);
-      addLog(
-        'SYNC_SHEETS',
-        'Sheets',
-        `Memuat ${parsedJadwal.length} data jadwal langsung dari Google Spreadsheet (${sheetId}).`
-      );
+
+      // Deep comparison / state update
+      setJadwalList((currentList) => {
+        const currentSerialized = JSON.stringify(
+          currentList.map((j) => ({
+            id: j.id,
+            tgl: j.tanggal,
+            jam: j.jam_ke,
+            rg: j.ruangan_id,
+            gr: j.guru_id,
+            mp: j.mata_pelajaran,
+            kl: j.kelas_id,
+            st: j.status,
+          }))
+        );
+
+        const newSerialized = JSON.stringify(
+          parsedJadwal.map((j) => ({
+            id: j.id,
+            tgl: j.tanggal,
+            jam: j.jam_ke,
+            rg: j.ruangan_id,
+            gr: j.guru_id,
+            mp: j.mata_pelajaran,
+            kl: j.kelas_id,
+            st: j.status,
+          }))
+        );
+
+        if (currentSerialized !== newSerialized) {
+          return parsedJadwal;
+        }
+        return currentList;
+      });
+
+      if (!isSilent) {
+        addLog(
+          'SYNC_SHEETS',
+          'Sheets',
+          `Sinkronisasi ${parsedJadwal.length} data jadwal dari Google Spreadsheet (${source}).`
+        );
+      }
+
       setIsSyncingSheets(false);
       return {
         success: true,
         count: parsedJadwal.length,
-        message: `Berhasil memuat ${parsedJadwal.length} data jadwal langsung dari Google Spreadsheet.`,
+        message: `Berhasil memuat ${parsedJadwal.length} data jadwal langsung dari Google Spreadsheet (${source}).`,
       };
-    } catch (err) {
-      console.warn('Fetch from Google Sheets error:', err);
+    } catch (err: any) {
       setIsSyncingSheets(false);
-      return {
-        success: false,
-        count: 0,
-        message: 'Gagal membaca CSV dari Google Sheets. Pastikan Spreadsheet dibagikan publik (Anyone with link).',
-      };
+      if (!isSilent) {
+        return {
+          success: false,
+          count: 0,
+          message:
+            err?.message ||
+            'Gagal membaca data dari Google Spreadsheet. Pastikan akses dokumen dibagikan publik (Anyone with the link).',
+        };
+      }
+      return { success: false, count: 0, message: '' };
     }
   };
+
+  // Real-time automatic background polling from Google Sheets (every 10s & on tab switch / window focus)
+  useEffect(() => {
+    // Immediate fetch on mount
+    fetchFromGoogleSheets(true);
+
+    const intervalSeconds = Math.max(8, settings.autoRefreshTVSeconds || 10);
+    const intervalId = setInterval(() => {
+      fetchFromGoogleSheets(true);
+    }, intervalSeconds * 1000);
+
+    const handleFocusOrVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchFromGoogleSheets(true);
+      }
+    };
+
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+    };
+  }, [
+    settings.googleSheetId,
+    settings.googleSheetsId,
+    settings.googleSheetsWebhookUrl,
+    settings.autoRefreshTVSeconds,
+    guruList,
+    kelasList,
+    ruanganList,
+  ]);
 
   return (
     <AppContext.Provider
@@ -1130,6 +1226,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         lastSheetsSyncTime,
         lastSyncTime: lastSheetsSyncTime,
         isSyncingSheets,
+        isRealtimeConnected,
         syncWithSheets,
         fetchFromGoogleSheets,
       }}

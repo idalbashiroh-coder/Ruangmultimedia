@@ -34,6 +34,7 @@ export const DashboardView: React.FC = () => {
     setIsBookingModalOpen,
     setPrefilledBooking,
     setIsSheetsModalOpen,
+    lastSheetsSyncTime,
     settings,
   } = useApp();
 
@@ -198,6 +199,37 @@ export const DashboardView: React.FC = () => {
               <span>Lihat Kalender Mingguan</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Live Spreadsheet Realtime Auto-Sync Status Bar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white border border-emerald-200 shadow-xs text-xs">
+        <div className="flex items-center gap-2.5 w-full sm:w-auto">
+          <span className="relative flex h-2.5 w-2.5 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
+          </span>
+          <span className="font-bold text-slate-800">
+            Sinkronisasi Database Spreadsheet:
+          </span>
+          <span className="text-emerald-700 font-semibold truncate">
+            {settings.googleSheetId || settings.googleSheetsId
+              ? 'Realtime Aktif (Data baru pada spreadsheet akan otomatis dimuat tanpa klik tombol)'
+              : 'ID Spreadsheet belum diatur'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <span className="text-[11px] text-slate-500 font-mono">
+            {lastSheetsSyncTime ? `Sinkron ${lastSheetsSyncTime} WIB` : 'Sedang memuat...'}
+          </span>
+          <button
+            onClick={() => setIsSheetsModalOpen(true)}
+            className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-[11px] transition-colors flex items-center gap-1 shrink-0"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            <span>Detail Sheet</span>
+          </button>
         </div>
       </div>
 

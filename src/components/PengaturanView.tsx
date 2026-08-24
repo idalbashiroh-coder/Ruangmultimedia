@@ -147,7 +147,22 @@ function doPost(e) {
 }
 
 function doGet(e) {
-  return ContentService.createTextOutput("Webhook Penjadwalan Multimedia Albashiroh Berjalan Normal.");
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheetName = "Jadwal_Multimedia";
+    var sheet = ss.getSheetByName(sheetName) || ss.getActiveSheet();
+    var values = sheet.getDataRange().getValues();
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      total_rows: values.length,
+      data: values
+    })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "error",
+      message: err.toString()
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
 }`;
 
 export const PengaturanView: React.FC = () => {
@@ -293,9 +308,11 @@ export const PengaturanView: React.FC = () => {
 
   const handleFetchFromSheets = async () => {
     setSyncFeedback(null);
-    const res = await fetchFromGoogleSheets();
+    updateSettings(formSettings);
+    const targetSheet = formSettings.googleSheetsId || formSettings.googleSheetUrl || '';
+    const res = await fetchFromGoogleSheets(false, targetSheet);
     setSyncFeedback(res);
-    setTimeout(() => setSyncFeedback(null), 6000);
+    setTimeout(() => setSyncFeedback(null), 8000);
   };
 
 
