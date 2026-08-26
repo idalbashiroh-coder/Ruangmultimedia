@@ -384,11 +384,31 @@ export const INITIAL_KELAS: Kelas[] = [
   { id: 'kls_12b', nama_kelas: 'XII B', jenjang: 'SMA', status: 'Aktif' },
 ];
 
+// Helper to format Date to local 'YYYY-MM-DD' without UTC shift
+export function getLocalDateString(date: Date = new Date()): string {
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+export const HARI_MAP_INDEX: Record<number, 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu'> = {
+  0: 'Senin', // Minggu mapped to Senin for school weekday schedule
+  1: 'Senin',
+  2: 'Selasa',
+  3: 'Rabu',
+  4: 'Kamis',
+  5: 'Jumat',
+  6: 'Sabtu',
+};
+
 // Helper to calculate a date for a specific day of current week
-export function getDateOfCurrentWeek(dayName: 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu', offsetWeeks = 0): string {
-  const now = new Date();
-  const currentDayIndex = now.getDay(); // 0 is Sunday, 1 is Monday, ... 6 is Saturday
-  // Normalize Monday as index 0, Saturday as index 5
+export function getDateOfCurrentWeek(
+  dayName: 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu',
+  offsetWeeks = 0,
+  baseDate: Date = new Date()
+): string {
+  const currentDayIndex = baseDate.getDay(); // 0 is Sunday, 1 is Monday, ... 6 is Saturday
   const dayMap: Record<string, number> = {
     'Senin': 1,
     'Selasa': 2,
@@ -400,28 +420,64 @@ export function getDateOfCurrentWeek(dayName: 'Senin' | 'Selasa' | 'Rabu' | 'Kam
   const targetDayNum = dayMap[dayName] || 1;
   const currentMondayOffset = currentDayIndex === 0 ? -6 : 1 - currentDayIndex;
   
-  const targetDate = new Date(now);
-  targetDate.setDate(now.getDate() + currentMondayOffset + (targetDayNum - 1) + (offsetWeeks * 7));
+  const targetDate = new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate() + currentMondayOffset + (targetDayNum - 1) + (offsetWeeks * 7)
+  );
   
-  const yyyy = targetDate.getFullYear();
-  const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
-  const dd = String(targetDate.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
+  return getLocalDateString(targetDate);
 }
 
-export function getHariNameFromDate(dateStr: string): 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu' {
-  const date = new Date(dateStr + 'T00:00:00');
-  const dayIndex = date.getDay();
-  const mapping: ('Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu')[] = [
-    'Senin', // 0 is Sunday, fallback to Senin
-    'Senin', // 1
-    'Selasa', // 2
-    'Rabu', // 3
-    'Kamis', // 4
-    'Jumat', // 5
-    'Sabtu', // 6
-  ];
-  return mapping[dayIndex] || 'Senin';
+export function getHariNameFromDate(
+  dateStrOrDate?: string | Date | null
+): 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu' {
+  if (!dateStrOrDate) {
+    const today = new Date();
+    return HARI_MAP_INDEX[today.getDay()] || 'Senin';
+  }
+
+  if (dateStrOrDate instanceof Date) {
+    return HARI_MAP_INDEX[dateStrOrDate.getDay()] || 'Senin';
+  }
+
+  const str = String(dateStrOrDate).trim();
+  const lower = str.toLowerCase();
+
+  // If already explicit Indonesian day name in string
+  if (lower.includes('senin')) return 'Senin';
+  if (lower.includes('selasa')) return 'Selasa';
+  if (lower.includes('rabu')) return 'Rabu';
+  if (lower.includes('kamis')) return 'Kamis';
+  if (lower.includes('jumat') || lower.includes("jum'at")) return 'Jumat';
+  if (lower.includes('sabtu')) return 'Sabtu';
+
+  // Parse YYYY-MM-DD
+  const ymd = str.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (ymd) {
+    const y = parseInt(ymd[1], 10);
+    const m = parseInt(ymd[2], 10) - 1;
+    const d = parseInt(ymd[3], 10);
+    const localDate = new Date(y, m, d);
+    return HARI_MAP_INDEX[localDate.getDay()] || 'Senin';
+  }
+
+  // Parse DD-MM-YYYY
+  const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  if (dmy) {
+    const d = parseInt(dmy[1], 10);
+    const m = parseInt(dmy[2], 10) - 1;
+    const y = parseInt(dmy[3], 10);
+    const localDate = new Date(y, m, d);
+    return HARI_MAP_INDEX[localDate.getDay()] || 'Senin';
+  }
+
+  const parsed = new Date(str);
+  if (!isNaN(parsed.getTime())) {
+    return HARI_MAP_INDEX[parsed.getDay()] || 'Senin';
+  }
+
+  return 'Senin';
 }
 
 // Real data only: Schedules remain empty unless recorded or fetched from Google Spreadsheet
@@ -502,7 +558,7 @@ export function getCurrentPeriodForHari(
   settings?: AppSettings | null,
   date: Date = new Date()
 ): number {
-  const normalizedHari = (hari as HariType) || getHariNameFromDate(date.toISOString().slice(0, 10));
+  const normalizedHari = (hari as HariType) || getHariNameFromDate(getLocalDateString(date));
   const sessions = getJamListForHari(normalizedHari, settings);
   const currentTotalMin = date.getHours() * 60 + date.getMinutes();
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ArrowLeft,
   BookOpen,
@@ -24,6 +24,7 @@ import {
   getDateOfCurrentWeek,
   getFormattedJamRange,
   getHariNameFromDate,
+  getLocalDateString,
 } from '../data/initialData';
 
 export const PublicJadwalView: React.FC = () => {
@@ -42,8 +43,18 @@ export const PublicJadwalView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'today' | 'weekly'>('today');
   const [filterRuangan, setFilterRuangan] = useState<string>('ALL');
 
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const todayHariName = useMemo(() => getHariNameFromDate(todayIso), [todayIso]);
+  // Real-time ticking date to ensure day & date always stay up to date
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDate(new Date());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const todayIso = useMemo(() => getLocalDateString(currentDate), [currentDate]);
+  const todayHariName = useMemo(() => getHariNameFromDate(currentDate), [currentDate]);
 
   const guruMap = useMemo(() => new Map(guruList.map((g) => [g.id, g.nama_guru])), [guruList]);
   const kelasMap = useMemo(() => new Map(kelasList.map((k) => [k.id, k.nama_kelas])), [kelasList]);
@@ -89,22 +100,37 @@ export const PublicJadwalView: React.FC = () => {
 
   // Today's schedules
   const todaySchedules = useMemo(() => {
+    const currentWeekTargetDate = getDateOfCurrentWeek(todayHariName as any, 0, currentDate);
+
     return jadwalList
       .filter((j) => {
-        if (j.tanggal !== todayIso) return false;
+        // Matches if:
+        // 1. Direct date matches today (j.tanggal === todayIso)
+        // 2. OR matching today's day name (j.hari === todayHariName) and either no date or matches this week's date for that day
+        const isDateMatch = j.tanggal === todayIso;
+        const isHariMatch = j.hari && j.hari.toLowerCase() === todayHariName.toLowerCase();
+        
+        if (!isDateMatch) {
+          if (!isHariMatch) return false;
+          // If schedule has a specific date and it's NOT today and not this week's date for this day
+          if (j.tanggal && j.tanggal !== todayIso && j.tanggal !== currentWeekTargetDate) {
+            return false;
+          }
+        }
+
         if (filterRuangan !== 'ALL' && j.ruangan_id !== filterRuangan) return false;
         return true;
       })
       .sort((a, b) => a.jam_ke - b.jam_ke);
-  }, [jadwalList, todayIso, filterRuangan]);
+  }, [jadwalList, todayIso, todayHariName, filterRuangan, currentDate]);
 
   // Current week schedules
-  const mondayDate = useMemo(() => getDateOfCurrentWeek('Senin', 0), []);
-  const saturdayDate = useMemo(() => getDateOfCurrentWeek('Sabtu', 0), []);
+  const mondayDate = useMemo(() => getDateOfCurrentWeek('Senin', 0, currentDate), [currentDate]);
+  const saturdayDate = useMemo(() => getDateOfCurrentWeek('Sabtu', 0, currentDate), [currentDate]);
 
   const weeklySchedules = useMemo(() => {
     return jadwalList.filter((j) => {
-      if (j.tanggal < mondayDate || j.tanggal > saturdayDate) return false;
+      if (j.tanggal && (j.tanggal < mondayDate || j.tanggal > saturdayDate)) return false;
       if (filterRuangan !== 'ALL' && j.ruangan_id !== filterRuangan) return false;
       return true;
     });
@@ -257,13 +283,16 @@ export const PublicJadwalView: React.FC = () => {
                 <Calendar className="w-5 h-5 text-emerald-600" />
                 <span>JADWAL PENGGUNAAN RUANGAN HARI INI</span>
               </h2>
-              <span className="text-xs font-bold text-slate-600 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
-                {new Date().toLocaleDateString('id-ID', {
-                  weekday: 'long',
-                  day: 'numeric',
-                  month: 'long',
-                  year: 'numeric',
-                })}
+              <span className="text-xs font-bold text-slate-700 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>
+                  {currentDate.toLocaleDateString('id-ID', {
+                    weekday: 'long',
+                    day: 'numeric',
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                </span>
               </span>
             </div>
 

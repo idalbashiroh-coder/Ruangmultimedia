@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   Award,
@@ -36,6 +36,12 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import {
+  getCurrentPeriodForHari,
+  getDateOfCurrentWeek,
+  getHariNameFromDate,
+  getLocalDateString,
+} from '../data/initialData';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -68,28 +74,41 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Calculate current date & time
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // Real-time ticking date to ensure day & date always stay up to date
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
 
-  // Calculate active period (Jam ke-1 s.d 8) based on typical time
-  const currentPeriod = useMemo<number>(() => {
-    const now = new Date();
-    const currentTotalMin = now.getHours() * 60 + now.getMinutes();
-    if (currentTotalMin < 465) return 1; // 07:00 - 07:45
-    if (currentTotalMin < 510) return 2; // 07:45 - 08:30
-    if (currentTotalMin < 570) return 3; // 08:30 - 09:15
-    if (currentTotalMin < 615) return 4; // 09:30 - 10:15
-    if (currentTotalMin < 660) return 5; // 10:15 - 11:00
-    if (currentTotalMin < 720) return 6; // 11:00 - 11:45
-    if (currentTotalMin < 810) return 7; // 12:45 - 13:30
-    if (currentTotalMin < 880) return 8; // 13:30 - 14:15
-    return 3;
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDate(new Date());
+    }, 10000);
+    return () => clearInterval(timer);
   }, []);
+
+  const todayIso = useMemo(() => getLocalDateString(currentDate), [currentDate]);
+  const todayHariName = useMemo(() => getHariNameFromDate(currentDate), [currentDate]);
+
+  // Calculate active period (Jam ke-1 s.d 8) based on school session configuration
+  const currentPeriod = useMemo<number>(() => {
+    return getCurrentPeriodForHari(todayHariName as any, settings, currentDate) || 1;
+  }, [todayHariName, settings, currentDate]);
 
   // Today's active schedules
   const todayJadwals = useMemo(() => {
-    return jadwalList.filter((j) => j.tanggal === todayIso && j.status !== 'Dibatalkan');
-  }, [jadwalList, todayIso]);
+    const currentWeekTargetDate = getDateOfCurrentWeek(todayHariName as any, 0, currentDate);
+
+    return jadwalList.filter((j) => {
+      if (j.status === 'Dibatalkan') return false;
+      const isDateMatch = j.tanggal === todayIso;
+      const isHariMatch = j.hari && j.hari.toLowerCase() === todayHariName.toLowerCase();
+      if (!isDateMatch) {
+        if (!isHariMatch) return false;
+        if (j.tanggal && j.tanggal !== todayIso && j.tanggal !== currentWeekTargetDate) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [jadwalList, todayIso, todayHariName, currentDate]);
 
   // Real-time Room Status for live widget
   const perpusActive = useMemo(() => {

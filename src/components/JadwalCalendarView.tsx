@@ -26,6 +26,7 @@ import {
   getDateOfCurrentWeek,
   getFormattedJamRange,
   getHariNameFromDate,
+  getLocalDateString,
 } from '../data/initialData';
 import { HariType, Jadwal, JamPembelajaran } from '../types';
 import { exportJadwalToExcel, exportJadwalToPDF } from '../utils/exportUtils';
@@ -411,7 +412,7 @@ export const JadwalCalendarView: React.FC = () => {
           <tbody className="divide-y divide-slate-200">
             {HARI_LIST.map((hari) => {
               const dayDate = getDateOfCurrentWeek(hari, selectedWeekOffset);
-              const isToday = dayDate === new Date().toISOString().slice(0, 10);
+              const isToday = dayDate === getLocalDateString();
 
               return (
                 <tr

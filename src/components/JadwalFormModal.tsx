@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { HARI_LIST, JAM_LIST, getFormattedJamRange, getHariNameFromDate } from '../data/initialData';
+import { HARI_LIST, JAM_LIST, getFormattedJamRange, getHariNameFromDate, getLocalDateString } from '../data/initialData';
 import { HariType, JamPembelajaran, StatusJadwal } from '../types';
 
 export const JadwalFormModal: React.FC = () => {
@@ -37,7 +37,7 @@ export const JadwalFormModal: React.FC = () => {
   } = useApp();
 
   // Form State
-  const [tanggal, setTanggal] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [tanggal, setTanggal] = useState<string>(() => getLocalDateString());
   const [hari, setHari] = useState<HariType>('Senin');
   const [ruanganId, setRuanganId] = useState<string>('');
   const [selectedJams, setSelectedJams] = useState<JamPembelajaran[]>([1]);
@@ -71,7 +71,7 @@ export const JadwalFormModal: React.FC = () => {
       setStatus(editingJadwal.status);
     } else {
       // Default to today or prefilled
-      const defaultTanggal = prefilledBooking?.tanggal || new Date().toISOString().slice(0, 10);
+      const defaultTanggal = prefilledBooking?.tanggal || getLocalDateString();
       const calculatedHari = prefilledBooking?.hari || getHariNameFromDate(defaultTanggal);
       const defaultRuangan = prefilledBooking?.ruangan_id || ruanganList[0]?.id || '';
       const defaultJam = prefilledBooking?.jam_ke ? [prefilledBooking.jam_ke] : [1];

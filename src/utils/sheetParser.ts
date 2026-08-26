@@ -1,5 +1,5 @@
 import { Guru, HariType, Jadwal, JamPembelajaran, Kelas, Ruangan, StatusJadwal } from '../types';
-import { getHariNameFromDate } from '../data/initialData';
+import { getDateOfCurrentWeek, getHariNameFromDate } from '../data/initialData';
 
 /**
  * Cleanly extract Sheet ID, GID, and Web Published URLs from any string or URL
@@ -739,10 +739,18 @@ export function parseGoogleSheetRowsToJadwal(
     const rawStatus = getVal(statusIdx, 12) || 'Terjadwal';
     const rawPembuat = getVal(pembuatIdx, 13);
 
-    // Normalize date
-    const normalizedTanggal = normalizeDateToYMD(rawTanggal);
+    // Normalize date or infer from Hari
+    let normalizedTanggal = normalizeDateToYMD(rawTanggal);
+    if (!normalizedTanggal && rawHari) {
+      const validHari: HariType[] = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+      const matched = validHari.find((h) => h.toLowerCase() === rawHari.toLowerCase().trim());
+      if (matched) {
+        normalizedTanggal = getDateOfCurrentWeek(matched, 0);
+      }
+    }
+
     if (!normalizedTanggal) {
-      // If row has no valid date, skip
+      // If row has neither valid date nor valid day name, skip
       continue;
     }
 

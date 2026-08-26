@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   ArrowRight,
@@ -26,8 +26,10 @@ import {
   JAM_LIST,
   formatGuruDisplayName,
   getCurrentPeriodForHari,
+  getDateOfCurrentWeek,
   getFormattedJamRange,
   getHariNameFromDate,
+  getLocalDateString,
 } from '../data/initialData';
 import { Jadwal } from '../types';
 
@@ -45,8 +47,18 @@ export const DashboardView: React.FC = () => {
     settings,
   } = useApp();
 
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const todayHariName = useMemo(() => getHariNameFromDate(todayIso), [todayIso]);
+  // Real-time ticking date to ensure day & date always stay up to date
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentDate(new Date());
+    }, 10000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const todayIso = useMemo(() => getLocalDateString(currentDate), [currentDate]);
+  const todayHariName = useMemo(() => getHariNameFromDate(currentDate), [currentDate]);
 
   // Lookup Maps
   const guruMap = useMemo(() => new Map(guruList.map((g) => [g.id, g])), [guruList]);
@@ -80,10 +92,23 @@ export const DashboardView: React.FC = () => {
 
   // Today's schedules
   const todayJadwals = useMemo(() => {
+    const currentWeekTargetDate = getDateOfCurrentWeek(todayHariName as any, 0, currentDate);
+
     return jadwalList
-      .filter((j) => j.tanggal === todayIso && j.status !== 'Dibatalkan')
+      .filter((j) => {
+        if (j.status === 'Dibatalkan') return false;
+        const isDateMatch = j.tanggal === todayIso;
+        const isHariMatch = j.hari && j.hari.toLowerCase() === todayHariName.toLowerCase();
+        if (!isDateMatch) {
+          if (!isHariMatch) return false;
+          if (j.tanggal && j.tanggal !== todayIso && j.tanggal !== currentWeekTargetDate) {
+            return false;
+          }
+        }
+        return true;
+      })
       .sort((a, b) => a.jam_ke - b.jam_ke);
-  }, [jadwalList, todayIso]);
+  }, [jadwalList, todayIso, todayHariName, currentDate]);
 
   // Total counts
   const totalHariIni = todayJadwals.length;
@@ -95,8 +120,8 @@ export const DashboardView: React.FC = () => {
 
   // Dynamic active period based on day-specific session schedule
   const currentPeriod = useMemo<number>(() => {
-    return getCurrentPeriodForHari(todayHariName as any, settings) || 3;
-  }, [todayHariName, settings]);
+    return getCurrentPeriodForHari(todayHariName as any, settings, currentDate) || 3;
+  }, [todayHariName, settings, currentDate]);
 
   // Ongoing and Next schedule
   const ongoingSchedules = useMemo(() => {

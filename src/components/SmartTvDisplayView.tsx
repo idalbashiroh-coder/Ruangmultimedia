@@ -18,8 +18,10 @@ import {
   JAM_LIST,
   formatGuruDisplayName,
   getCurrentPeriodForHari,
+  getDateOfCurrentWeek,
   getFormattedJamRange,
   getHariNameFromDate,
+  getLocalDateString,
 } from '../data/initialData';
 import { JamPembelajaran } from '../types';
 
@@ -37,8 +39,8 @@ export const SmartTvDisplayView: React.FC = () => {
     return () => clearInterval(timer);
   }, []);
 
-  const todayIso = useMemo(() => currentTime.toISOString().slice(0, 10), [currentTime]);
-  const todayHariName = useMemo(() => getHariNameFromDate(todayIso), [todayIso]);
+  const todayIso = useMemo(() => getLocalDateString(currentTime), [currentTime]);
+  const todayHariName = useMemo(() => getHariNameFromDate(currentTime), [currentTime]);
 
   const guruMap = useMemo(() => new Map(guruList.map((g) => [g.id, g.nama_guru])), [guruList]);
   const kelasMap = useMemo(() => new Map(kelasList.map((k) => [k.id, k.nama_kelas])), [kelasList]);
@@ -70,10 +72,23 @@ export const SmartTvDisplayView: React.FC = () => {
 
   // Today's active schedules
   const todaySchedules = useMemo(() => {
+    const currentWeekTargetDate = getDateOfCurrentWeek(todayHariName as any, 0, currentTime);
+
     return jadwalList
-      .filter((j) => j.tanggal === todayIso && j.status !== 'Dibatalkan')
+      .filter((j) => {
+        if (j.status === 'Dibatalkan') return false;
+        const isDateMatch = j.tanggal === todayIso;
+        const isHariMatch = j.hari && j.hari.toLowerCase() === todayHariName.toLowerCase();
+        if (!isDateMatch) {
+          if (!isHariMatch) return false;
+          if (j.tanggal && j.tanggal !== todayIso && j.tanggal !== currentWeekTargetDate) {
+            return false;
+          }
+        }
+        return true;
+      })
       .sort((a, b) => a.jam_ke - b.jam_ke);
-  }, [jadwalList, todayIso]);
+  }, [jadwalList, todayIso, todayHariName, currentTime]);
 
   // Determine current active Jam Ke based on day-specific session schedule
   const currentApproxJam: JamPembelajaran | null = useMemo(() => {
