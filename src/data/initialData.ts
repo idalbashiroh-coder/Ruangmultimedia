@@ -377,3 +377,16 @@ export const generateInitialJadwal = (): Jadwal[] => {
   return [];
 };
 
+export const formatGuruDisplayName = (guruOrName?: string | Guru | null, short = false): string => {
+  if (!guruOrName) return 'Guru Pengajar';
+  const fullName = typeof guruOrName === 'string' ? guruOrName : guruOrName.nama_guru;
+  if (!fullName || fullName.trim() === '') return 'Guru Pengajar';
+  if (!short) return fullName.trim();
+
+  // Clean title prefixes like Ustadz / Ustadzah
+  const clean = fullName.replace(/ustadz(ah)?\s*/gi, '').trim();
+  // Get base name before academic degrees comma (e.g. "Sumiatun, S.Pd., M.Pd." -> "Sumiatun")
+  const baseName = clean.split(',')[0].trim();
+  return baseName || fullName;
+};
+

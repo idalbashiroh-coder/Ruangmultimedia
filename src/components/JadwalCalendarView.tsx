@@ -19,7 +19,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { HARI_LIST, JAM_LIST, getDateOfCurrentWeek, getHariNameFromDate } from '../data/initialData';
+import { HARI_LIST, JAM_LIST, formatGuruDisplayName, getDateOfCurrentWeek, getHariNameFromDate } from '../data/initialData';
 import { HariType, Jadwal, JamPembelajaran } from '../types';
 import { exportJadwalToExcel, exportJadwalToPDF } from '../utils/exportUtils';
 
@@ -55,6 +55,31 @@ export const JadwalCalendarView: React.FC = () => {
   const guruMap = useMemo(() => new Map(guruList.map((g) => [g.id, g])), [guruList]);
   const kelasMap = useMemo(() => new Map(kelasList.map((k) => [k.id, k])), [kelasList]);
   const ruanganMap = useMemo(() => new Map(ruanganList.map((r) => [r.id, r])), [ruanganList]);
+
+  const getGuruName = (guruId: string, short: boolean = false): string => {
+    if (!guruId) return 'Guru Pengajar';
+    const foundById = guruMap.get(guruId);
+    if (foundById) return formatGuruDisplayName(foundById.nama_guru, short);
+    const foundByName = guruList.find(
+      (g) =>
+        g.id.toLowerCase() === guruId.toLowerCase() ||
+        g.nama_guru.toLowerCase() === guruId.toLowerCase() ||
+        (g.nama_guru.length > 3 && guruId.toLowerCase().includes(g.nama_guru.toLowerCase()))
+    );
+    if (foundByName) return formatGuruDisplayName(foundByName.nama_guru, short);
+    return formatGuruDisplayName(guruId, short);
+  };
+
+  const getKelasName = (kelasId: string): string => {
+    if (!kelasId) return '-';
+    const found = kelasMap.get(kelasId);
+    if (found) return found.nama_kelas;
+    const foundByName = kelasList.find(
+      (k) => k.id.toLowerCase() === kelasId.toLowerCase() || k.nama_kelas.toLowerCase() === kelasId.toLowerCase()
+    );
+    if (foundByName) return foundByName.nama_kelas;
+    return kelasId;
+  };
 
   // Unique list of mapel for filter
   const mapelOptions = useMemo(() => {
@@ -438,13 +463,11 @@ export const JadwalCalendarView: React.FC = () => {
                                       Perpus
                                     </span>
                                     <span className="font-bold text-[10px] px-1 rounded bg-emerald-200/80 text-emerald-900">
-                                      {kelasMap.get(perpusSchedule.kelas_id)?.nama_kelas}
+                                      {getKelasName(perpusSchedule.kelas_id)}
                                     </span>
                                   </div>
-                                  <p className="font-bold truncate leading-tight">
-                                    {guruMap.get(perpusSchedule.guru_id)?.nama_guru?.split(' ')[1] ||
-                                      guruMap.get(perpusSchedule.guru_id)?.nama_guru ||
-                                      'Guru'}
+                                  <p className="font-bold truncate leading-tight" title={getGuruName(perpusSchedule.guru_id)}>
+                                    {getGuruName(perpusSchedule.guru_id, true)}
                                   </p>
                                   <p className="text-[10px] text-slate-600 truncate mt-0.5">
                                     {perpusSchedule.mata_pelajaran}
@@ -484,13 +507,11 @@ export const JadwalCalendarView: React.FC = () => {
                                       Labkom
                                     </span>
                                     <span className="font-bold text-[10px] px-1 rounded bg-indigo-200/80 text-indigo-900">
-                                      {kelasMap.get(labkomSchedule.kelas_id)?.nama_kelas}
+                                      {getKelasName(labkomSchedule.kelas_id)}
                                     </span>
                                   </div>
-                                  <p className="font-bold truncate leading-tight">
-                                    {guruMap.get(labkomSchedule.guru_id)?.nama_guru?.split(' ')[1] ||
-                                      guruMap.get(labkomSchedule.guru_id)?.nama_guru ||
-                                      'Guru'}
+                                  <p className="font-bold truncate leading-tight" title={getGuruName(labkomSchedule.guru_id)}>
+                                    {getGuruName(labkomSchedule.guru_id, true)}
                                   </p>
                                   <p className="text-[10px] text-slate-600 truncate mt-0.5">
                                     {labkomSchedule.mata_pelajaran}
@@ -584,7 +605,7 @@ export const JadwalCalendarView: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Guru Pengajar:</span>
                   <span className="font-bold text-slate-900">
-                    {guruMap.get(selectedJadwalDetail.guru_id)?.nama_guru}
+                    {getGuruName(selectedJadwalDetail.guru_id)}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -596,7 +617,7 @@ export const JadwalCalendarView: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="text-slate-500">Kelas:</span>
                   <span className="font-bold text-emerald-800">
-                    Kelas {kelasMap.get(selectedJadwalDetail.kelas_id)?.nama_kelas}
+                    Kelas {getKelasName(selectedJadwalDetail.kelas_id)}
                   </span>
                 </div>
               </div>

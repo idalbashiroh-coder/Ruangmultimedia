@@ -780,17 +780,52 @@ export function parseGoogleSheetRowsToJadwal(
       resolvedRuanganId = ruanganList[0].id;
     }
 
+    // Helper to clean person name for fuzzy title-agnostic matching
+    const cleanPersonName = (name: string): string => {
+      if (!name) return '';
+      return name
+        .toLowerCase()
+        .replace(/ustadz(ah)?\s*/gi, '')
+        .replace(/\b(s\.?pd|m\.?pd|s\.?kom|s\.?s|s\.?e|s\.?psi|s\.?t|s\.?si|s\.?sos|lc|m\.?h|m\.?si|m\.?m)\b/gi, '')
+        .replace(/[^a-z0-9]/g, '')
+        .trim();
+    };
+
     // Resolve Guru ID
     let resolvedGuruId = rawGuru;
-    const lowerGuru = rawGuru.toLowerCase();
-    const foundGuru = guruList.find(
-      (g) =>
-        g.id.toLowerCase() === lowerGuru ||
-        g.nama_guru.toLowerCase() === lowerGuru ||
-        g.nama_guru.toLowerCase().includes(lowerGuru) ||
-        (lowerGuru.length > 4 && lowerGuru.includes(g.nama_guru.toLowerCase())) ||
-        (rawNip && g.nip && g.nip === rawNip)
-    );
+    const lowerGuru = rawGuru.toLowerCase().trim();
+    const cleanRawGuru = cleanPersonName(rawGuru);
+
+    // 1. Direct ID match
+    let foundGuru = guruList.find((g) => g.id.toLowerCase() === lowerGuru);
+
+    // 2. Exact full name match
+    if (!foundGuru) {
+      foundGuru = guruList.find((g) => g.nama_guru.toLowerCase().trim() === lowerGuru);
+    }
+
+    // 3. Normalized name match (ignoring academic titles & punctuation)
+    if (!foundGuru && cleanRawGuru.length > 2) {
+      foundGuru = guruList.find((g) => {
+        const cleanG = cleanPersonName(g.nama_guru);
+        return cleanG === cleanRawGuru;
+      });
+    }
+
+    // 4. Substring containment match on normalized names
+    if (!foundGuru && cleanRawGuru.length > 3) {
+      foundGuru = guruList.find((g) => {
+        const cleanG = cleanPersonName(g.nama_guru);
+        return cleanG.length > 3 && (cleanG.includes(cleanRawGuru) || cleanRawGuru.includes(cleanG));
+      });
+    }
+
+    // 5. NIP Match ONLY if real alphanumeric identifier (not '-' or empty)
+    if (!foundGuru && rawNip && rawNip.replace(/[^0-9a-zA-Z]/g, '').length >= 4) {
+      const cleanRawNip = rawNip.trim();
+      foundGuru = guruList.find((g) => g.nip && g.nip.trim() !== '-' && g.nip.trim() === cleanRawNip);
+    }
+
     if (foundGuru) {
       resolvedGuruId = foundGuru.id;
     }

@@ -14,7 +14,7 @@ import {
   Volume2,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { JAM_LIST, getHariNameFromDate } from '../data/initialData';
+import { JAM_LIST, formatGuruDisplayName, getHariNameFromDate } from '../data/initialData';
 import { JamPembelajaran } from '../types';
 
 export const SmartTvDisplayView: React.FC = () => {
@@ -37,6 +37,30 @@ export const SmartTvDisplayView: React.FC = () => {
   const guruMap = useMemo(() => new Map(guruList.map((g) => [g.id, g.nama_guru])), [guruList]);
   const kelasMap = useMemo(() => new Map(kelasList.map((k) => [k.id, k.nama_kelas])), [kelasList]);
   const ruanganMap = useMemo(() => new Map(ruanganList.map((r) => [r.id, r.nama_ruangan])), [ruanganList]);
+
+  // Safe helper to resolve guru name
+  const getGuruName = (guruId: string): string => {
+    if (!guruId) return 'Guru Pengajar';
+    if (guruMap.has(guruId)) return formatGuruDisplayName(guruMap.get(guruId)!);
+    const found = guruList.find(
+      (g) =>
+        g.id.toLowerCase() === guruId.toLowerCase() ||
+        g.nama_guru.toLowerCase() === guruId.toLowerCase() ||
+        (g.nama_guru.length > 3 && guruId.toLowerCase().includes(g.nama_guru.toLowerCase()))
+    );
+    if (found) return formatGuruDisplayName(found.nama_guru);
+    return formatGuruDisplayName(guruId);
+  };
+
+  const getKelasName = (kelasId: string): string => {
+    if (!kelasId) return '-';
+    if (kelasMap.has(kelasId)) return kelasMap.get(kelasId)!;
+    const found = kelasList.find(
+      (k) => k.id.toLowerCase() === kelasId.toLowerCase() || k.nama_kelas.toLowerCase() === kelasId.toLowerCase()
+    );
+    if (found) return found.nama_kelas;
+    return kelasId;
+  };
 
   // Today's active schedules
   const todaySchedules = useMemo(() => {
@@ -208,13 +232,13 @@ export const SmartTvDisplayView: React.FC = () => {
                         )}
                       </div>
                       <span className="font-bold text-xs px-2 py-0.5 rounded bg-emerald-900/60 text-emerald-300 border border-emerald-700/50">
-                        Kelas {kelasMap.get(schedule.kelas_id)}
+                        Kelas {getKelasName(schedule.kelas_id)}
                       </span>
                     </div>
 
                     <div className="flex items-baseline justify-between mt-1">
                       <h3 className="text-sm font-bold text-white">
-                        {guruMap.get(schedule.guru_id)}
+                        {getGuruName(schedule.guru_id)}
                       </h3>
                       <p className="text-xs font-semibold text-emerald-400">
                         {schedule.mata_pelajaran}
@@ -296,13 +320,13 @@ export const SmartTvDisplayView: React.FC = () => {
                         )}
                       </div>
                       <span className="font-bold text-xs px-2 py-0.5 rounded bg-indigo-900/60 text-indigo-300 border border-indigo-700/50">
-                        Kelas {kelasMap.get(schedule.kelas_id)}
+                        Kelas {getKelasName(schedule.kelas_id)}
                       </span>
                     </div>
 
                     <div className="flex items-baseline justify-between mt-1">
                       <h3 className="text-sm font-bold text-white">
-                        {guruMap.get(schedule.guru_id)}
+                        {getGuruName(schedule.guru_id)}
                       </h3>
                       <p className="text-xs font-semibold text-indigo-400">
                         {schedule.mata_pelajaran}

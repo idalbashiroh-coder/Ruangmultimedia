@@ -21,7 +21,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { HARI_LIST, JAM_LIST, getHariNameFromDate } from '../data/initialData';
+import { HARI_LIST, JAM_LIST, formatGuruDisplayName, getHariNameFromDate } from '../data/initialData';
 import { Jadwal } from '../types';
 
 export const DashboardView: React.FC = () => {
@@ -45,6 +45,31 @@ export const DashboardView: React.FC = () => {
   const guruMap = useMemo(() => new Map(guruList.map((g) => [g.id, g])), [guruList]);
   const kelasMap = useMemo(() => new Map(kelasList.map((k) => [k.id, k])), [kelasList]);
   const ruanganMap = useMemo(() => new Map(ruanganList.map((r) => [r.id, r])), [ruanganList]);
+
+  const getGuruName = (guruId: string, short: boolean = false): string => {
+    if (!guruId) return 'Guru Pengajar';
+    const foundById = guruMap.get(guruId);
+    if (foundById) return formatGuruDisplayName(foundById.nama_guru, short);
+    const foundByName = guruList.find(
+      (g) =>
+        g.id.toLowerCase() === guruId.toLowerCase() ||
+        g.nama_guru.toLowerCase() === guruId.toLowerCase() ||
+        (g.nama_guru.length > 3 && guruId.toLowerCase().includes(g.nama_guru.toLowerCase()))
+    );
+    if (foundByName) return formatGuruDisplayName(foundByName.nama_guru, short);
+    return formatGuruDisplayName(guruId, short);
+  };
+
+  const getKelasName = (kelasId: string): string => {
+    if (!kelasId) return '-';
+    const found = kelasMap.get(kelasId);
+    if (found) return found.nama_kelas;
+    const foundByName = kelasList.find(
+      (k) => k.id.toLowerCase() === kelasId.toLowerCase() || k.nama_kelas.toLowerCase() === kelasId.toLowerCase()
+    );
+    if (foundByName) return foundByName.nama_kelas;
+    return kelasId;
+  };
 
   // Today's schedules
   const todayJadwals = useMemo(() => {
@@ -355,7 +380,7 @@ export const DashboardView: React.FC = () => {
               <span>Sesi Sekarang (Jam ke-{currentPeriod}):</span>
               {perpusOngoing ? (
                 <span className="font-bold text-slate-900">
-                  {guruMap.get(perpusOngoing.guru_id)?.nama_guru}
+                  {getGuruName(perpusOngoing.guru_id)}
                 </span>
               ) : (
                 <span className="text-emerald-700 font-bold">Kosong / Tersedia</span>
@@ -368,7 +393,7 @@ export const DashboardView: React.FC = () => {
                   Mata Pelajaran: <strong className="text-slate-800">{perpusOngoing.mata_pelajaran}</strong>
                 </span>
                 <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
-                  Kelas {kelasMap.get(perpusOngoing.kelas_id)?.nama_kelas}
+                  Kelas {getKelasName(perpusOngoing.kelas_id)}
                 </span>
               </div>
             )}
@@ -377,7 +402,7 @@ export const DashboardView: React.FC = () => {
               <span>Penggunaan Berikutnya:</span>
               <span className="font-medium text-slate-700">
                 {perpusNext
-                  ? `Jam ke-${perpusNext.jam_ke} • ${guruMap.get(perpusNext.guru_id)?.nama_guru?.split(' ')[1] || 'Guru'}`
+                  ? `Jam ke-${perpusNext.jam_ke} • ${getGuruName(perpusNext.guru_id, true)}`
                   : 'Tidak ada jadwal lanjutan hari ini'}
               </span>
             </div>
@@ -423,7 +448,7 @@ export const DashboardView: React.FC = () => {
               <span>Sesi Sekarang (Jam ke-{currentPeriod}):</span>
               {labkomOngoing ? (
                 <span className="font-bold text-slate-900">
-                  {guruMap.get(labkomOngoing.guru_id)?.nama_guru}
+                  {getGuruName(labkomOngoing.guru_id)}
                 </span>
               ) : (
                 <span className="text-emerald-700 font-bold">Kosong / Tersedia</span>
@@ -436,7 +461,7 @@ export const DashboardView: React.FC = () => {
                   Mata Pelajaran: <strong className="text-slate-800">{labkomOngoing.mata_pelajaran}</strong>
                 </span>
                 <span className="px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 font-bold">
-                  Kelas {kelasMap.get(labkomOngoing.kelas_id)?.nama_kelas}
+                  Kelas {getKelasName(labkomOngoing.kelas_id)}
                 </span>
               </div>
             )}
@@ -445,7 +470,7 @@ export const DashboardView: React.FC = () => {
               <span>Penggunaan Berikutnya:</span>
               <span className="font-medium text-slate-700">
                 {labkomNext
-                  ? `Jam ke-${labkomNext.jam_ke} • ${guruMap.get(labkomNext.guru_id)?.nama_guru?.split(' ')[1] || 'Guru'}`
+                  ? `Jam ke-${labkomNext.jam_ke} • ${getGuruName(labkomNext.guru_id, true)}`
                   : 'Tidak ada jadwal lanjutan hari ini'}
               </span>
             </div>
@@ -641,12 +666,12 @@ export const DashboardView: React.FC = () => {
                       </div>
 
                       <span className="text-[10px] font-bold text-slate-600">
-                        Kelas {kelas?.nama_kelas}
+                        Kelas {getKelasName(j.kelas_id)}
                       </span>
                     </div>
 
                     <p className="text-xs font-bold text-slate-900 truncate">
-                      {guru?.nama_guru || 'Guru'}
+                      {getGuruName(j.guru_id)}
                     </p>
                     <p className="text-[11px] text-slate-600 truncate mt-0.5">
                       {j.mata_pelajaran}

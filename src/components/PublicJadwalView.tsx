@@ -15,7 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { HARI_LIST, JAM_LIST, getDateOfCurrentWeek, getHariNameFromDate } from '../data/initialData';
+import { HARI_LIST, JAM_LIST, formatGuruDisplayName, getDateOfCurrentWeek, getHariNameFromDate } from '../data/initialData';
 
 export const PublicJadwalView: React.FC = () => {
   const {
@@ -39,6 +39,44 @@ export const PublicJadwalView: React.FC = () => {
   const guruMap = useMemo(() => new Map(guruList.map((g) => [g.id, g.nama_guru])), [guruList]);
   const kelasMap = useMemo(() => new Map(kelasList.map((k) => [k.id, k.nama_kelas])), [kelasList]);
   const ruanganMap = useMemo(() => new Map(ruanganList.map((r) => [r.id, r.nama_ruangan])), [ruanganList]);
+
+  // Helper to safely get teacher full or short name
+  const getGuruName = (guruId: string, short: boolean = false): string => {
+    if (!guruId) return 'Guru Pengajar';
+    if (guruMap.has(guruId)) {
+      return formatGuruDisplayName(guruMap.get(guruId)!, short);
+    }
+    const found = guruList.find(
+      (g) =>
+        g.id.toLowerCase() === guruId.toLowerCase() ||
+        g.nama_guru.toLowerCase() === guruId.toLowerCase() ||
+        (g.nama_guru.length > 3 && guruId.toLowerCase().includes(g.nama_guru.toLowerCase()))
+    );
+    if (found) {
+      return formatGuruDisplayName(found.nama_guru, short);
+    }
+    return formatGuruDisplayName(guruId, short);
+  };
+
+  const getKelasName = (kelasId: string): string => {
+    if (!kelasId) return '-';
+    if (kelasMap.has(kelasId)) return kelasMap.get(kelasId)!;
+    const found = kelasList.find(
+      (k) => k.id.toLowerCase() === kelasId.toLowerCase() || k.nama_kelas.toLowerCase() === kelasId.toLowerCase()
+    );
+    if (found) return found.nama_kelas;
+    return kelasId;
+  };
+
+  const getRuanganName = (ruangId: string): string => {
+    if (!ruangId) return 'Ruangan';
+    if (ruanganMap.has(ruangId)) return ruanganMap.get(ruangId)!;
+    const found = ruanganList.find(
+      (r) => r.id.toLowerCase() === ruangId.toLowerCase() || r.nama_ruangan.toLowerCase() === ruangId.toLowerCase()
+    );
+    if (found) return found.nama_ruangan;
+    return ruangId;
+  };
 
   // Today's schedules
   const todaySchedules = useMemo(() => {
@@ -242,10 +280,10 @@ export const PublicJadwalView: React.FC = () => {
 
                       <div>
                         <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">
-                          {ruanganMap.get(j.ruangan_id)}
+                          {getRuanganName(j.ruangan_id)}
                         </span>
                         <h3 className="text-sm font-bold text-slate-900">
-                          {guruMap.get(j.guru_id) || 'Guru'}
+                          {getGuruName(j.guru_id)}
                         </h3>
                         <p className="text-xs font-medium text-emerald-800 mt-0.5">
                           {j.mata_pelajaran}
@@ -254,7 +292,7 @@ export const PublicJadwalView: React.FC = () => {
 
                       <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
                         <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
-                          Kelas {kelasMap.get(j.kelas_id)}
+                          Kelas {getKelasName(j.kelas_id)}
                         </span>
                         <span className="text-slate-500 text-[11px] truncate max-w-[140px]" title={j.keperluan}>
                           {j.keperluan || 'Kegiatan KBM'}
@@ -325,10 +363,10 @@ export const PublicJadwalView: React.FC = () => {
                                     >
                                       <div className="flex justify-between font-bold">
                                         <span>{isPerpus ? 'Perpus' : 'Labkom'}</span>
-                                        <span>{kelasMap.get(s.kelas_id)}</span>
+                                        <span>{getKelasName(s.kelas_id)}</span>
                                       </div>
-                                      <p className="truncate font-semibold mt-0.5">
-                                        {guruMap.get(s.guru_id)?.split(' ')[1] || 'Guru'}
+                                      <p className="truncate font-semibold mt-0.5" title={getGuruName(s.guru_id)}>
+                                        {getGuruName(s.guru_id, true)}
                                       </p>
                                     </div>
                                   );

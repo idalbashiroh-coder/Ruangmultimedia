@@ -17,7 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { getDateOfCurrentWeek } from '../data/initialData';
+import { formatGuruDisplayName, getDateOfCurrentWeek } from '../data/initialData';
 import { Jadwal } from '../types';
 import { exportJadwalToExcel, exportJadwalToPDF } from '../utils/exportUtils';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
@@ -61,6 +61,39 @@ export const JadwalListView: React.FC = () => {
   const guruMap = useMemo(() => new Map(guruList.map((g) => [g.id, g.nama_guru])), [guruList]);
   const kelasMap = useMemo(() => new Map(kelasList.map((k) => [k.id, k.nama_kelas])), [kelasList]);
   const ruanganMap = useMemo(() => new Map(ruanganList.map((r) => [r.id, r.nama_ruangan])), [ruanganList]);
+
+  const getGuruName = (guruId: string): string => {
+    if (!guruId) return 'Guru Pengajar';
+    if (guruMap.has(guruId)) return formatGuruDisplayName(guruMap.get(guruId)!);
+    const found = guruList.find(
+      (g) =>
+        g.id.toLowerCase() === guruId.toLowerCase() ||
+        g.nama_guru.toLowerCase() === guruId.toLowerCase() ||
+        (g.nama_guru.length > 3 && guruId.toLowerCase().includes(g.nama_guru.toLowerCase()))
+    );
+    if (found) return formatGuruDisplayName(found.nama_guru);
+    return formatGuruDisplayName(guruId);
+  };
+
+  const getKelasName = (kelasId: string): string => {
+    if (!kelasId) return '-';
+    if (kelasMap.has(kelasId)) return kelasMap.get(kelasId)!;
+    const found = kelasList.find(
+      (k) => k.id.toLowerCase() === kelasId.toLowerCase() || k.nama_kelas.toLowerCase() === kelasId.toLowerCase()
+    );
+    if (found) return found.nama_kelas;
+    return kelasId;
+  };
+
+  const getRuanganName = (ruangId: string): string => {
+    if (!ruangId) return 'Ruangan';
+    if (ruanganMap.has(ruangId)) return ruanganMap.get(ruangId)!;
+    const found = ruanganList.find(
+      (r) => r.id.toLowerCase() === ruangId.toLowerCase() || r.nama_ruangan.toLowerCase() === ruangId.toLowerCase()
+    );
+    if (found) return found.nama_ruangan;
+    return ruangId;
+  };
 
   // Current calendar week dates
   const mondayDate = useMemo(
@@ -394,16 +427,16 @@ export const JadwalListView: React.FC = () => {
                             : 'bg-indigo-100 text-indigo-800'
                         }`}
                       >
-                        {ruanganMap.get(j.ruangan_id) || j.ruangan_id}
+                        {getRuanganName(j.ruangan_id)}
                       </span>
                     </td>
                     <td className="p-3.5 font-bold text-slate-900">
-                      {guruMap.get(j.guru_id) || j.guru_id}
+                      {getGuruName(j.guru_id)}
                     </td>
                     <td className="p-3.5">
                       <p className="font-semibold text-slate-800">{j.mata_pelajaran}</p>
                       <span className="inline-block mt-0.5 text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-800">
-                        Kelas {kelasMap.get(j.kelas_id) || j.kelas_id}
+                        Kelas {getKelasName(j.kelas_id)}
                       </span>
                     </td>
                     <td className="p-3.5 text-slate-600 max-w-[200px] truncate" title={j.keperluan}>
