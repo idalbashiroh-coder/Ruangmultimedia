@@ -21,7 +21,14 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { HARI_LIST, JAM_LIST, formatGuruDisplayName, getHariNameFromDate } from '../data/initialData';
+import {
+  HARI_LIST,
+  JAM_LIST,
+  formatGuruDisplayName,
+  getCurrentPeriodForHari,
+  getFormattedJamRange,
+  getHariNameFromDate,
+} from '../data/initialData';
 import { Jadwal } from '../types';
 
 export const DashboardView: React.FC = () => {
@@ -86,33 +93,10 @@ export const DashboardView: React.FC = () => {
   const totalPerpusAll = jadwalList.filter((j) => j.ruangan_id === 'rng_perpus' && j.status !== 'Dibatalkan').length;
   const totalLabkomAll = jadwalList.filter((j) => j.ruangan_id === 'rng_labkom' && j.status !== 'Dibatalkan').length;
 
-  // Simulate active period based on current time (WIB school hours approximation)
-  // Or standard daytime indicator:
+  // Dynamic active period based on day-specific session schedule
   const currentPeriod = useMemo<number>(() => {
-    const now = new Date();
-    const hours = now.getHours();
-    const minutes = now.getMinutes();
-    const currentTotalMin = hours * 60 + minutes;
-
-    // School periods approx:
-    // Jam 1: 07:00 - 07:45 (420 - 465)
-    // Jam 2: 07:45 - 08:30 (465 - 510)
-    // Jam 3: 08:30 - 09:15 (510 - 555)
-    // Jam 4: 09:30 - 10:15 (570 - 615)
-    // Jam 5: 10:15 - 11:00 (615 - 660)
-    // Jam 6: 11:00 - 11:45 (660 - 705)
-    // Jam 7: 12:45 - 13:30 (765 - 810)
-    // Jam 8: 13:30 - 14:15 (810 - 855)
-    if (currentTotalMin < 465) return 1;
-    if (currentTotalMin < 510) return 2;
-    if (currentTotalMin < 570) return 3;
-    if (currentTotalMin < 615) return 4;
-    if (currentTotalMin < 660) return 5;
-    if (currentTotalMin < 720) return 6;
-    if (currentTotalMin < 810) return 7;
-    if (currentTotalMin < 880) return 8;
-    return 3; // Default to representative daytime period 3
-  }, []);
+    return getCurrentPeriodForHari(todayHariName as any, settings) || 3;
+  }, [todayHariName, settings]);
 
   // Ongoing and Next schedule
   const ongoingSchedules = useMemo(() => {

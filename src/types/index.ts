@@ -94,6 +94,15 @@ export interface AuditLog {
   timestamp: string;
 }
 
+export interface JamPembelajaranConfigItem {
+  jam_ke: JamPembelajaran;
+  mulai: string;
+  selesai: string;
+  label?: string;
+}
+
+export type JadwalSesiHarian = Record<HariType, JamPembelajaranConfigItem[]>;
+
 export interface AppSettings {
   namaAplikasi: string;
   namaSekolah: string;
@@ -110,4 +119,5 @@ export interface AppSettings {
   googleSheetsWebhookUrl?: string;
   autoSyncSheets?: boolean;
   autoRefreshTVSeconds: number;
+  jadwalSesiHarian?: JadwalSesiHarian;
 }

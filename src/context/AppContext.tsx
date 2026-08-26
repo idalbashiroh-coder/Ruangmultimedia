@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
+  DEFAULT_JADWAL_SESI_HARIAN,
   HARI_LIST,
   INITIAL_GURU,
   INITIAL_KELAS,
@@ -8,7 +9,10 @@ import {
   INITIAL_USERS,
   JAM_PEMBELAJARAN_CONFIG,
   generateInitialJadwal,
+  getFormattedJamRange as getFormattedJamRangeHelper,
   getHariNameFromDate,
+  getJamConfig as getJamConfigHelper,
+  getJamListForHari as getJamListForHariHelper,
 } from '../data/initialData';
 import {
   AppSettings,
@@ -16,7 +20,9 @@ import {
   Guru,
   HariType,
   Jadwal,
+  JadwalSesiHarian,
   JamPembelajaran,
+  JamPembelajaranConfigItem,
   Kelas,
   Ruangan,
   User,
@@ -111,6 +117,11 @@ interface AppContextType {
   updateUser: (id: string, user: Partial<Omit<User, 'id'>>) => { success: boolean; message: string };
   deleteUser: (id: string) => { success: boolean; message: string };
   updateSettings: (newSettings: Partial<AppSettings>) => void;
+  updateDailySessionSchedule: (hari: HariType, sessions: JamPembelajaranConfigItem[]) => void;
+  resetDailySessionSchedule: (hari?: HariType) => void;
+  getJamConfig: (hari?: HariType | string, jam_ke?: number) => JamPembelajaranConfigItem;
+  getJamListForHari: (hari?: HariType | string) => JamPembelajaranConfigItem[];
+  getFormattedJamRange: (hari?: HariType | string, jam_ke?: number, includeLabel?: boolean) => string;
 
   // Data maintenance & logs
   clearAuditLogs: () => void;
@@ -250,6 +261,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               : INITIAL_SETTINGS.googleSheetsWebhookUrl,
           autoSyncSheets: parsed.autoSyncSheets !== undefined ? Boolean(parsed.autoSyncSheets) : true,
           autoRefreshTVSeconds: parsed.autoRefreshTVSeconds || 15,
+          jadwalSesiHarian: parsed.jadwalSesiHarian || INITIAL_SETTINGS.jadwalSesiHarian || DEFAULT_JADWAL_SESI_HARIAN,
         };
       } catch {
         return INITIAL_SETTINGS;
@@ -440,13 +452,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const guru = guruList.find((g) => g.id === j.guru_id);
           const kelas = kelasList.find((k) => k.id === j.kelas_id);
           const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
-          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          const waktuStr = getFormattedJamRangeHelper(j.hari, j.jam_ke, settings);
           return {
             id: j.id,
             tanggal: j.tanggal || '',
             hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            waktu: waktuStr,
             ruangan: ruangan?.nama_ruangan || '',
             guru: guru?.nama_guru || '',
             nip_guru: guru?.nip || '',
@@ -535,13 +547,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const guru = guruList.find((g) => g.id === j.guru_id);
           const kelas = kelasList.find((k) => k.id === j.kelas_id);
           const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
-          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          const waktuStr = getFormattedJamRangeHelper(j.hari, j.jam_ke, settings);
           return {
             id: j.id,
             tanggal: j.tanggal || '',
             hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            waktu: waktuStr,
             ruangan: ruangan?.nama_ruangan || '',
             guru: guru?.nama_guru || '',
             nip_guru: guru?.nip || '',
@@ -592,13 +604,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const guru = guruList.find((g) => g.id === j.guru_id);
           const kelas = kelasList.find((k) => k.id === j.kelas_id);
           const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
-          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          const waktuStr = getFormattedJamRangeHelper(j.hari, j.jam_ke, settings);
           return {
             id: j.id,
             tanggal: j.tanggal || '',
             hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            waktu: waktuStr,
             ruangan: ruangan?.nama_ruangan || '',
             guru: guru?.nama_guru || '',
             nip_guru: guru?.nip || '',
@@ -681,13 +693,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const guru = guruList.find((g) => g.id === j.guru_id);
           const kelas = kelasList.find((k) => k.id === j.kelas_id);
           const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
-          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          const waktuStr = getFormattedJamRangeHelper(j.hari, j.jam_ke, settings);
           return {
             id: j.id,
             tanggal: j.tanggal || '',
             hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            waktu: waktuStr,
             ruangan: ruangan?.nama_ruangan || '',
             guru: guru?.nama_guru || '',
             nip_guru: guru?.nip || '',
@@ -731,13 +743,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const guru = guruList.find((g) => g.id === j.guru_id);
           const kelas = kelasList.find((k) => k.id === j.kelas_id);
           const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
-          const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+          const waktuStr = getFormattedJamRangeHelper(j.hari, j.jam_ke, settings);
           return {
             id: j.id,
             tanggal: j.tanggal || '',
             hari: j.hari || '',
             jam_ke: j.jam_ke,
-            waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+            waktu: waktuStr,
             ruangan: ruangan?.nama_ruangan || '',
             guru: guru?.nama_guru || '',
             nip_guru: guru?.nip || '',
@@ -926,6 +938,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addLog('UBAH_JADWAL', 'System', 'Memperbarui pengaturan sistem dan identitas sekolah.');
   };
 
+  const updateDailySessionSchedule = (hari: HariType, sessions: JamPembelajaranConfigItem[]) => {
+    setSettings((prev) => {
+      const prevHarian = prev.jadwalSesiHarian || DEFAULT_JADWAL_SESI_HARIAN;
+      const nextHarian: JadwalSesiHarian = {
+        ...prevHarian,
+        [hari]: sessions,
+      };
+      return {
+        ...prev,
+        jadwalSesiHarian: nextHarian,
+      };
+    });
+    addLog('UBAH_JADWAL', 'System', `Memperbarui pengaturan waktu jam ke-1 s.d 8 hari ${hari}.`);
+  };
+
+  const resetDailySessionSchedule = (hari?: HariType) => {
+    setSettings((prev) => {
+      if (hari) {
+        const nextHarian = {
+          ...(prev.jadwalSesiHarian || DEFAULT_JADWAL_SESI_HARIAN),
+          [hari]: DEFAULT_JADWAL_SESI_HARIAN[hari],
+        };
+        return { ...prev, jadwalSesiHarian: nextHarian };
+      }
+      return { ...prev, jadwalSesiHarian: DEFAULT_JADWAL_SESI_HARIAN };
+    });
+    addLog(
+      'RESET_DATA',
+      'System',
+      hari
+        ? `Mereset jadwal sesi jam pelajaran hari ${hari} ke template standar.`
+        : 'Mereset jadwal sesi seluruh hari (Senin s/d Sabtu) ke template standar.'
+    );
+  };
+
+  const getJamConfig = (hari?: HariType | string, jam_ke?: number) => {
+    return getJamConfigHelper(hari, jam_ke, settings);
+  };
+
+  const getJamListForHari = (hari?: HariType | string) => {
+    return getJamListForHariHelper(hari, settings);
+  };
+
+  const getFormattedJamRange = (hari?: HariType | string, jam_ke?: number, includeLabel?: boolean) => {
+    return getFormattedJamRangeHelper(hari, jam_ke, settings, includeLabel);
+  };
+
   // Audit Logs Maintenance
   const clearAuditLogs = () => {
     setAuditLogs([]);
@@ -979,14 +1038,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const guru = guruList.find((g) => g.id === j.guru_id);
         const kelas = kelasList.find((k) => k.id === j.kelas_id);
         const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
-        const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+        const waktuStr = getFormattedJamRangeHelper(j.hari, j.jam_ke, settings);
 
         return {
           id: j.id,
           tanggal: j.tanggal || '',
           hari: j.hari || '',
           jam_ke: j.jam_ke,
-          waktu: jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : '',
+          waktu: waktuStr,
           ruangan: ruangan?.nama_ruangan || '',
           guru: guru?.nama_guru || '',
           nip_guru: guru?.nip || '',
@@ -1238,6 +1297,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateUser,
         deleteUser,
         updateSettings,
+        updateDailySessionSchedule,
+        resetDailySessionSchedule,
+        getJamConfig,
+        getJamListForHari,
+        getFormattedJamRange,
         clearAuditLogs,
         clearHistoricalJadwal,
         clearAllJadwal,

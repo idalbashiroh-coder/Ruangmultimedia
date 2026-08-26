@@ -17,7 +17,14 @@ import {
   Users,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { HARI_LIST, JAM_LIST, formatGuruDisplayName, getDateOfCurrentWeek, getHariNameFromDate } from '../data/initialData';
+import {
+  HARI_LIST,
+  JAM_LIST,
+  formatGuruDisplayName,
+  getDateOfCurrentWeek,
+  getFormattedJamRange,
+  getHariNameFromDate,
+} from '../data/initialData';
 
 export const PublicJadwalView: React.FC = () => {
   const {
@@ -293,11 +300,14 @@ export const PublicJadwalView: React.FC = () => {
                     >
                       <div className="flex items-center justify-between">
                         <span
-                          className={`px-2.5 py-1 rounded-lg text-xs font-extrabold text-white ${
+                          className={`px-2.5 py-1 rounded-lg text-xs font-extrabold text-white flex items-center gap-1.5 ${
                             isPerpus ? 'bg-emerald-600' : 'bg-indigo-600'
                           }`}
                         >
-                          Jam ke-{j.jam_ke}
+                          <span>Jam ke-{j.jam_ke}</span>
+                          <span className="opacity-80 text-[11px] font-normal">
+                            ({getFormattedJamRange(j.hari, j.jam_ke, settings)})
+                          </span>
                         </span>
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${

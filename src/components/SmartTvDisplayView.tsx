@@ -14,7 +14,13 @@ import {
   Volume2,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { JAM_LIST, formatGuruDisplayName, getHariNameFromDate } from '../data/initialData';
+import {
+  JAM_LIST,
+  formatGuruDisplayName,
+  getCurrentPeriodForHari,
+  getFormattedJamRange,
+  getHariNameFromDate,
+} from '../data/initialData';
 import { JamPembelajaran } from '../types';
 
 export const SmartTvDisplayView: React.FC = () => {
@@ -69,24 +75,10 @@ export const SmartTvDisplayView: React.FC = () => {
       .sort((a, b) => a.jam_ke - b.jam_ke);
   }, [jadwalList, todayIso]);
 
-  // Determine current active Jam Ke based on standard school hours approximation
-  // (e.g. Jam 1: 07:00-07:45, Jam 2: 07:45-08:30, Jam 3: 08:30-09:15, Jam 4: 09:30-10:15, Jam 5: 10:15-11:00, Jam 6: 11:00-11:45, Jam 7: 12:30-13:15, Jam 8: 13:15-14:00)
+  // Determine current active Jam Ke based on day-specific session schedule
   const currentApproxJam: JamPembelajaran | null = useMemo(() => {
-    const hours = currentTime.getHours();
-    const minutes = currentTime.getMinutes();
-    const totalMinutes = hours * 60 + minutes;
-
-    if (totalMinutes >= 7 * 60 && totalMinutes < 7 * 60 + 45) return 1;
-    if (totalMinutes >= 7 * 60 + 45 && totalMinutes < 8 * 60 + 30) return 2;
-    if (totalMinutes >= 8 * 60 + 30 && totalMinutes < 9 * 60 + 15) return 3;
-    if (totalMinutes >= 9 * 60 + 15 && totalMinutes < 10 * 60 + 15) return 4;
-    if (totalMinutes >= 10 * 60 + 15 && totalMinutes < 11 * 60 + 0) return 5;
-    if (totalMinutes >= 11 * 60 + 0 && totalMinutes < 11 * 60 + 45) return 6;
-    if (totalMinutes >= 12 * 60 + 30 && totalMinutes < 13 * 60 + 15) return 7;
-    if (totalMinutes >= 13 * 60 + 15 && totalMinutes < 14 * 60 + 15) return 8;
-
-    return null;
-  }, [currentTime]);
+    return getCurrentPeriodForHari(todayHariName as any, settings, currentTime);
+  }, [todayHariName, settings, currentTime]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {

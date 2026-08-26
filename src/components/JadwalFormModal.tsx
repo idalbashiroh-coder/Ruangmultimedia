@@ -16,7 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { HARI_LIST, JAM_LIST, getHariNameFromDate } from '../data/initialData';
+import { HARI_LIST, JAM_LIST, getFormattedJamRange, getHariNameFromDate } from '../data/initialData';
 import { HariType, JamPembelajaran, StatusJadwal } from '../types';
 
 export const JadwalFormModal: React.FC = () => {
@@ -33,6 +33,7 @@ export const JadwalFormModal: React.FC = () => {
     createJadwal,
     updateJadwal,
     currentUser,
+    settings,
   } = useApp();
 
   // Form State
@@ -384,6 +385,8 @@ export const JadwalFormModal: React.FC = () => {
             <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
               {JAM_LIST.map((jam) => {
                 const isSelected = selectedJams.includes(jam);
+                const timeRange = getFormattedJamRange(hari, jam, settings);
+
                 return (
                   <button
                     key={jam}
@@ -396,7 +399,14 @@ export const JadwalFormModal: React.FC = () => {
                         : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
-                    <span>Jam ke-{jam}</span>
+                    <span className="block">Jam ke-{jam}</span>
+                    <span
+                      className={`block text-[9px] font-mono mt-0.5 ${
+                        isSelected ? 'text-slate-300' : 'text-slate-500'
+                      }`}
+                    >
+                      {timeRange}
+                    </span>
                   </button>
                 );
               })}

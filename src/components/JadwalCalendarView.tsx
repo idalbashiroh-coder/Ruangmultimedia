@@ -19,7 +19,14 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { HARI_LIST, JAM_LIST, formatGuruDisplayName, getDateOfCurrentWeek, getHariNameFromDate } from '../data/initialData';
+import {
+  HARI_LIST,
+  JAM_LIST,
+  formatGuruDisplayName,
+  getDateOfCurrentWeek,
+  getFormattedJamRange,
+  getHariNameFromDate,
+} from '../data/initialData';
 import { HariType, Jadwal, JamPembelajaran } from '../types';
 import { exportJadwalToExcel, exportJadwalToPDF } from '../utils/exportUtils';
 
@@ -593,11 +600,16 @@ export const JadwalCalendarView: React.FC = () => {
                     )}
                   </span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-slate-500">Jam Pembelajaran:</span>
-                  <span className="font-extrabold text-slate-900 px-2 py-0.5 rounded bg-slate-200">
-                    Jam ke-{selectedJadwalDetail.jam_ke}
-                  </span>
+                  <div className="text-right">
+                    <span className="font-extrabold text-slate-900 px-2 py-0.5 rounded bg-slate-200">
+                      Jam ke-{selectedJadwalDetail.jam_ke}
+                    </span>
+                    <span className="text-[11px] text-slate-500 font-mono block mt-0.5">
+                      ({getFormattedJamRange(selectedJadwalDetail.hari, selectedJadwalDetail.jam_ke, settings)})
+                    </span>
+                  </div>
                 </div>
               </div>
 

@@ -17,7 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { formatGuruDisplayName, getDateOfCurrentWeek } from '../data/initialData';
+import { formatGuruDisplayName, getDateOfCurrentWeek, getFormattedJamRange } from '../data/initialData';
 import { Jadwal } from '../types';
 import { exportJadwalToExcel, exportJadwalToPDF } from '../utils/exportUtils';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
@@ -415,8 +415,11 @@ export const JadwalListView: React.FC = () => {
                       <p className="text-[11px] text-slate-500 font-mono">{j.tanggal}</p>
                     </td>
                     <td className="p-3.5 text-center">
-                      <span className="px-2 py-1 rounded bg-slate-100 font-extrabold text-slate-900">
+                      <span className="px-2 py-1 rounded bg-slate-100 font-extrabold text-slate-900 block text-xs">
                         Jam {j.jam_ke}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
+                        {getFormattedJamRange(j.hari, j.jam_ke, settings)}
                       </span>
                     </td>
                     <td className="p-3.5">

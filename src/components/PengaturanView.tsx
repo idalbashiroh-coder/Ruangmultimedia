@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import {
   AlertTriangle,
+  ArrowRight,
+  Calendar,
   Check,
   CheckCircle2,
+  Clock,
   Code2,
   Copy,
   Database,
@@ -13,12 +16,16 @@ import {
   History,
   Info,
   Key,
+  Layers,
   RefreshCw,
+  RotateCcw,
   Save,
   School,
   Send,
   Shield,
+  Sliders,
   Sparkles,
+  Sun,
   Trash2,
   Upload,
   UserPlus,
@@ -26,8 +33,14 @@ import {
   X,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
-import { AppSettings, UserRole, User } from '../types';
-import { JAM_PEMBELAJARAN_CONFIG } from '../data/initialData';
+import { AppSettings, HariType, JadwalSesiHarian, JamPembelajaranConfigItem, UserRole, User } from '../types';
+import {
+  DEFAULT_JADWAL_SESI_HARIAN,
+  HARI_LIST,
+  JAM_PEMBELAJARAN_CONFIG,
+  calculateDurationInMinutes,
+  getFormattedJamRange,
+} from '../data/initialData';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
 const APPS_SCRIPT_CODE = `/**
@@ -169,6 +182,8 @@ export const PengaturanView: React.FC = () => {
   const {
     settings,
     updateSettings,
+    updateDailySessionSchedule,
+    resetDailySessionSchedule,
     userList,
     createUser,
     deleteUser,
@@ -188,7 +203,6 @@ export const PengaturanView: React.FC = () => {
     resetAllDataToDefault,
   } = useApp();
 
-
   const [formSettings, setFormSettings] = useState<AppSettings>(() => ({
     ...settings,
     namaAplikasi: settings.namaAplikasi || '',
@@ -203,7 +217,17 @@ export const PengaturanView: React.FC = () => {
     googleSheetsId: settings.googleSheetsId || settings.googleSheetId || '',
     googleSheetsWebhookUrl: settings.googleSheetsWebhookUrl || '',
     autoSyncSheets: settings.autoSyncSheets !== undefined ? Boolean(settings.autoSyncSheets) : true,
+    jadwalSesiHarian: settings.jadwalSesiHarian || DEFAULT_JADWAL_SESI_HARIAN,
   }));
+
+  // Day specific session timing state
+  const [sessionSchedules, setSessionSchedules] = useState<JadwalSesiHarian>(() => {
+    return settings.jadwalSesiHarian || DEFAULT_JADWAL_SESI_HARIAN;
+  });
+  const [selectedHari, setSelectedHari] = useState<HariType>('Senin');
+  const [sessionSaveSuccess, setSessionSaveSuccess] = useState(false);
+  const [isCopyModalOpen, setIsCopyModalOpen] = useState(false);
+  const [copyTargetDays, setCopyTargetDays] = useState<HariType[]>([]);
 
   React.useEffect(() => {
     if (settings) {
@@ -221,11 +245,17 @@ export const PengaturanView: React.FC = () => {
         googleSheetsId: settings.googleSheetsId || settings.googleSheetId || '',
         googleSheetsWebhookUrl: settings.googleSheetsWebhookUrl || '',
         autoSyncSheets: settings.autoSyncSheets !== undefined ? Boolean(settings.autoSyncSheets) : true,
+        jadwalSesiHarian: settings.jadwalSesiHarian || DEFAULT_JADWAL_SESI_HARIAN,
       });
+
+      if (settings.jadwalSesiHarian) {
+        setSessionSchedules(settings.jadwalSesiHarian);
+      }
     }
   }, [settings]);
+
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [activeTab, setActiveTab] = useState<'umum' | 'sheets' | 'users' | 'audit' | 'backup'>('umum');
+  const [activeTab, setActiveTab] = useState<'jam_pelajaran' | 'umum' | 'sheets' | 'users' | 'audit' | 'backup'>('jam_pelajaran');
   const [copiedScript, setCopiedScript] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<{ success?: boolean; message?: string } | null>(null);
 
@@ -240,6 +270,95 @@ export const PengaturanView: React.FC = () => {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const handleSessionTimeChange = (
+    hari: HariType,
+    jamKe: number,
+    field: 'mulai' | 'selesai' | 'label',
+    value: string
+  ) => {
+    setSessionSchedules((prev) => {
+      const currentList = prev[hari] || DEFAULT_JADWAL_SESI_HARIAN[hari];
+      const updatedList = currentList.map((item) => {
+        if (item.jam_ke === jamKe) {
+          const nextItem = { ...item, [field]: value };
+          if (field === 'mulai' || field === 'selesai') {
+            const m = field === 'mulai' ? value : item.mulai;
+            const s = field === 'selesai' ? value : item.selesai;
+            nextItem.durasiMenit = calculateDurationInMinutes(m, s);
+          }
+          return nextItem;
+        }
+        return item;
+      });
+
+      return {
+        ...prev,
+        [hari]: updatedList,
+      };
+    });
+  };
+
+  const handleSaveAllSessions = () => {
+    updateSettings({
+      jadwalSesiHarian: sessionSchedules,
+    });
+    setSessionSaveSuccess(true);
+    showToast('Pengaturan jam ke 1 s/d 8 (Senin s/d Sabtu) berhasil disimpan!');
+    setTimeout(() => setSessionSaveSuccess(false), 3000);
+  };
+
+  const handleSaveCurrentDaySessions = (hari: HariType) => {
+    const daySessions = sessionSchedules[hari] || DEFAULT_JADWAL_SESI_HARIAN[hari];
+    updateDailySessionSchedule(hari, daySessions);
+    setSessionSaveSuccess(true);
+    showToast(`Pengaturan jam pelajaran hari ${hari} berhasil disimpan!`);
+    setTimeout(() => setSessionSaveSuccess(false), 3000);
+  };
+
+  const handleResetCurrentDaySessions = (hari: HariType) => {
+    const defaultSessions = DEFAULT_JADWAL_SESI_HARIAN[hari];
+    setSessionSchedules((prev) => ({
+      ...prev,
+      [hari]: defaultSessions,
+    }));
+    updateDailySessionSchedule(hari, defaultSessions);
+    showToast(`Jadwal jam sesi hari ${hari} telah direset ke template bawaan.`);
+  };
+
+  const handleResetAllDailySessions = () => {
+    setSessionSchedules(DEFAULT_JADWAL_SESI_HARIAN);
+    resetDailySessionSchedule();
+    showToast('Seluruh jadwal jam sesi (Senin s/d Sabtu) telah direset ke template bawaan.');
+  };
+
+  const handleOpenCopyModal = () => {
+    const otherDays = HARI_LIST.filter((h) => h !== selectedHari);
+    setCopyTargetDays(otherDays);
+    setIsCopyModalOpen(true);
+  };
+
+  const handleExecuteCopy = () => {
+    if (copyTargetDays.length === 0) {
+      showToast('Pilih minimal satu hari tujuan salin.');
+      return;
+    }
+    const sourceSessions = sessionSchedules[selectedHari] || DEFAULT_JADWAL_SESI_HARIAN[selectedHari];
+    const updated = { ...sessionSchedules };
+    copyTargetDays.forEach((d) => {
+      updated[d] = sourceSessions.map((s) => ({ ...s }));
+    });
+    setSessionSchedules(updated);
+    updateSettings({ jadwalSesiHarian: updated });
+    setIsCopyModalOpen(false);
+    showToast(`Jam sesi hari ${selectedHari} berhasil disalin ke: ${copyTargetDays.join(', ')}.`);
+  };
+
+  const toggleTargetDay = (day: HariType) => {
+    setCopyTargetDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
   };
 
   const handleCopyCode = () => {
@@ -269,14 +388,14 @@ export const PengaturanView: React.FC = () => {
       const guru = guruList.find((g) => g.id === j.guru_id);
       const kelas = kelasList.find((k) => k.id === j.kelas_id);
       const ruangan = ruanganList.find((r) => r.id === j.ruangan_id);
-      const jamDef = JAM_PEMBELAJARAN_CONFIG.find((jp) => jp.jam_ke === j.jam_ke);
+      const waktuStr = getFormattedJamRange(j.hari, j.jam_ke, settings);
 
       return [
         `"${j.id || ''}"`,
         `"${j.tanggal || ''}"`,
         `"${j.hari || ''}"`,
         `"${j.jam_ke || ''}"`,
-        `"${jamDef ? `${jamDef.mulai} - ${jamDef.selesai}` : ''}"`,
+        `"${waktuStr}"`,
         `"${(ruangan?.nama_ruangan || '').replace(/"/g, '""')}"`,
         `"${(guru?.nama_guru || '').replace(/"/g, '""')}"`,
         `"${(guru?.nip || '').replace(/"/g, '""')}"`,
@@ -435,46 +554,419 @@ export const PengaturanView: React.FC = () => {
       {/* Navigation Sub-Tabs */}
       <div className="flex flex-wrap items-center gap-2 p-1.5 rounded-2xl bg-slate-100 border border-slate-200">
         <button
+          id="tab-jam-pelajaran"
+          onClick={() => setActiveTab('jam_pelajaran')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            activeTab === 'jam_pelajaran' ? 'bg-white text-emerald-800 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+          }`}
+        >
+          <Clock className="w-3.5 h-3.5 text-emerald-600" />
+          <span>Jam Pelajaran (Senin - Sabtu)</span>
+        </button>
+        <button
           onClick={() => setActiveTab('umum')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeTab === 'umum' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Profil Sekolah & Kop
+          <School className="w-3.5 h-3.5 text-slate-500" />
+          <span>Profil Sekolah & Kop</span>
         </button>
         <button
           onClick={() => setActiveTab('sheets')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeTab === 'sheets' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Google Sheets Sync
+          <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500" />
+          <span>Google Sheets Sync</span>
         </button>
         <button
           onClick={() => setActiveTab('users')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeTab === 'users' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Manajemen User ({userList.length})
+          <Users className="w-3.5 h-3.5 text-slate-500" />
+          <span>Manajemen User ({userList.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('audit')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeTab === 'audit' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Audit Log ({auditLogs.length})
+          <History className="w-3.5 h-3.5 text-slate-500" />
+          <span>Audit Log ({auditLogs.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('backup')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
             activeTab === 'backup' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
           }`}
         >
-          Backup & Reset
+          <Database className="w-3.5 h-3.5 text-slate-500" />
+          <span>Backup & Reset</span>
         </button>
       </div>
+
+      {/* TAB: PENGATURAN JAM PELAJARAN (SENIN - SABTU) */}
+      {activeTab === 'jam_pelajaran' && (
+        <div className="space-y-6">
+          {/* Section Info Header */}
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-700 flex items-center justify-center font-bold">
+                    <Clock className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 font-display">
+                      Pengaturan Jam Pembelajaran (Jam Ke-1 s/d Jam Ke-8)
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Atur jam mulai, selesai, dan durasi pada masing-masing hari (Senin s/d Sabtu) secara fleksibel.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenCopyModal}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  title="Salin konfigurasi jam hari aktif ke hari lain"
+                >
+                  <Copy className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Salin Jam Hari Ini</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleResetCurrentDaySessions(selectedHari)}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  title={`Reset jam hari ${selectedHari} ke bawaan`}
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Reset Hari Ini</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAllSessions}
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Simpan Semua Hari</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Day Selector Pills */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-1">
+              {HARI_LIST.map((h) => {
+                const isSelected = selectedHari === h;
+                const sessions = sessionSchedules[h] || DEFAULT_JADWAL_SESI_HARIAN[h];
+                const totalMinutes = sessions.reduce((acc, curr) => acc + (curr.durasiMenit || 0), 0);
+                const hours = Math.floor(totalMinutes / 60);
+                const mins = totalMinutes % 60;
+
+                return (
+                  <button
+                    key={h}
+                    type="button"
+                    onClick={() => setSelectedHari(h)}
+                    className={`p-3 rounded-2xl border text-left transition-all relative ${
+                      isSelected
+                        ? 'bg-emerald-50 border-emerald-500 shadow-xs ring-2 ring-emerald-500/20'
+                        : 'bg-slate-50/70 border-slate-200 hover:bg-slate-100/80'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`text-xs font-bold ${isSelected ? 'text-emerald-950' : 'text-slate-800'}`}>
+                        {h}
+                      </span>
+                      {h === 'Jumat' && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-md font-bold bg-amber-100 text-amber-800">
+                          Spesial
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-medium">
+                      8 Jam • {hours > 0 ? `${hours}j ` : ''}{mins}m
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Period Editor for Selected Day */}
+          <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 font-display flex items-center gap-2">
+                  <span>Daftar Sesi Pembelajaran: Hari {selectedHari}</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
+                    8 Jam Pembelajaran
+                  </span>
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Ubah jam mulai dan selesai. Durasi dan interval jeda istirahat akan dihitung otomatis secara real-time.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleSaveCurrentDaySessions(selectedHari)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs self-start sm:self-auto"
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Simpan Hari {selectedHari}</span>
+              </button>
+            </div>
+
+            {/* List of 8 Periods with automatic break gaps */}
+            <div className="space-y-3 pt-2">
+              {(sessionSchedules[selectedHari] || DEFAULT_JADWAL_SESI_HARIAN[selectedHari]).map((item, idx, arr) => {
+                const prevItem = idx > 0 ? arr[idx - 1] : null;
+                const breakMinutes = prevItem ? calculateDurationInMinutes(prevItem.selesai, item.mulai) : 0;
+
+                return (
+                  <React.Fragment key={item.jam_ke}>
+                    {/* Visual break gap indicator between periods if gap > 0 */}
+                    {idx > 0 && breakMinutes > 0 && (
+                      <div className="py-2 px-4 rounded-xl bg-amber-50/80 border border-amber-200/80 flex items-center justify-between text-xs text-amber-900 font-semibold my-1 animate-in fade-in">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm">☕</span>
+                          <span>
+                            Waktu Istirahat / Jeda Antar Jam: {prevItem?.selesai} - {item.mulai}
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-md bg-amber-200/70 text-amber-900 font-bold text-[11px]">
+                          {breakMinutes} Menit Jeda
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Period Row Card */}
+                    <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 hover:border-slate-300 transition-colors">
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-center">
+                        {/* Period Badge */}
+                        <div className="sm:col-span-2 flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                            {item.jam_ke}
+                          </div>
+                          <div>
+                            <div className="font-bold text-xs text-slate-900">Jam Ke-{item.jam_ke}</div>
+                            <div className="text-[10px] text-slate-500">Sesi Belajar</div>
+                          </div>
+                        </div>
+
+                        {/* Jam Mulai */}
+                        <div className="sm:col-span-3">
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                            Jam Mulai
+                          </label>
+                          <input
+                            type="time"
+                            value={item.mulai}
+                            onChange={(e) =>
+                              handleSessionTimeChange(selectedHari, item.jam_ke, 'mulai', e.target.value)
+                            }
+                            required
+                            className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Jam Selesai */}
+                        <div className="sm:col-span-3">
+                          <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                            Jam Selesai
+                          </label>
+                          <input
+                            type="time"
+                            value={item.selesai}
+                            onChange={(e) =>
+                              handleSessionTimeChange(selectedHari, item.jam_ke, 'selesai', e.target.value)
+                            }
+                            required
+                            className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Durasi & Keterangan */}
+                        <div className="sm:col-span-4 flex items-center gap-3">
+                          <div className="flex-1">
+                            <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                              Keterangan / Label
+                            </label>
+                            <input
+                              type="text"
+                              value={item.label || ''}
+                              onChange={(e) =>
+                                handleSessionTimeChange(selectedHari, item.jam_ke, 'label', e.target.value)
+                              }
+                              placeholder={`Jam ke-${item.jam_ke} (${item.mulai} - ${item.selesai})`}
+                              className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                            />
+                          </div>
+
+                          <div className="shrink-0 pt-4">
+                            <span
+                              className={`inline-block px-2.5 py-1 rounded-lg text-xs font-bold ${
+                                (item.durasiMenit || 0) > 0
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-rose-100 text-rose-800 border border-rose-200'
+                              }`}
+                            >
+                              {item.durasiMenit || 0} Menit
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+
+            {/* Bottom Actions Bar */}
+            <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="text-xs text-slate-500">
+                Total Durasi Belajar Hari {selectedHari}:{' '}
+                <strong className="text-slate-900">
+                  {Math.floor(
+                    (sessionSchedules[selectedHari] || DEFAULT_JADWAL_SESI_HARIAN[selectedHari]).reduce(
+                      (acc, curr) => acc + (curr.durasiMenit || 0),
+                      0
+                    ) / 60
+                  )}{' '}
+                  Jam{' '}
+                  {
+                    (sessionSchedules[selectedHari] || DEFAULT_JADWAL_SESI_HARIAN[selectedHari]).reduce(
+                      (acc, curr) => acc + (curr.durasiMenit || 0),
+                      0
+                    ) % 60
+                  }{' '}
+                  Menit
+                </strong>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleResetCurrentDaySessions(selectedHari)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors flex items-center gap-1.5"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Hari Ini</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveAllSessions}
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Simpan Semua Pengaturan Jam</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: SALIN JAM KE HARI LAIN */}
+      {isCopyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-md bg-white rounded-3xl p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Copy className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-bold text-sm text-slate-900 font-display">
+                  Salin Jam Hari {selectedHari} ke Hari Lain
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCopyModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Pilih hari target untuk menerapkan konfigurasi 8 jam pembelajaran dari hari{' '}
+              <strong>{selectedHari}</strong>:
+            </p>
+
+            <div className="grid grid-cols-2 gap-2">
+              {HARI_LIST.filter((h) => h !== selectedHari).map((day) => {
+                const isChecked = copyTargetDays.includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => toggleTargetDay(day)}
+                    className={`p-3 rounded-xl border text-left font-bold text-xs flex items-center justify-between transition-all ${
+                      isChecked
+                        ? 'bg-emerald-50 border-emerald-500 text-emerald-950'
+                        : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>Hari {day}</span>
+                    <div
+                      className={`w-4 h-4 rounded-md border flex items-center justify-center ${
+                        isChecked ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
+                      }`}
+                    >
+                      {isChecked && <Check className="w-3 h-3" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCopyTargetDays(HARI_LIST.filter((h) => h !== selectedHari))}
+                  className="text-emerald-700 hover:underline font-bold"
+                >
+                  Pilih Semua
+                </button>
+                <span className="text-slate-300">•</span>
+                <button
+                  type="button"
+                  onClick={() => setCopyTargetDays([])}
+                  className="text-slate-500 hover:underline"
+                >
+                  Batal Pilih
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCopyModalOpen(false)}
+                  className="px-3 py-1.5 rounded-xl text-slate-600 hover:bg-slate-100 font-bold"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleExecuteCopy}
+                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition-colors"
+                >
+                  Terapkan Salin
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB 1: PROFIL SEKOLAH & KOP SURAT */}
       {activeTab === 'umum' && (

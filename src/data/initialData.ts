@@ -1,4 +1,4 @@
-import { AppSettings, Guru, Jadwal, Kelas, Ruangan, User } from '../types';
+import { AppSettings, Guru, HariType, Jadwal, JadwalSesiHarian, JamPembelajaran, JamPembelajaranConfigItem, Kelas, Ruangan, User } from '../types';
 
 export const HARI_LIST: ('Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu')[] = [
   'Senin',
@@ -11,23 +11,74 @@ export const HARI_LIST: ('Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabt
 
 export const JAM_LIST: (1 | 2 | 3 | 4 | 5 | 6 | 7 | 8)[] = [1, 2, 3, 4, 5, 6, 7, 8];
 
-export interface JamPembelajaranConfigItem {
-  jam_ke: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
-  mulai: string;
-  selesai: string;
-  label: string;
-}
+export { type JamPembelajaranConfigItem };
 
-export const JAM_PEMBELAJARAN_CONFIG: JamPembelajaranConfigItem[] = [
-  { jam_ke: 1, mulai: '07:00', selesai: '07:45', label: 'Jam Ke-1 (07:00 - 07:45)' },
-  { jam_ke: 2, mulai: '07:45', selesai: '08:30', label: 'Jam Ke-2 (07:45 - 08:30)' },
-  { jam_ke: 3, mulai: '08:30', selesai: '09:15', label: 'Jam Ke-3 (08:30 - 09:15)' },
-  { jam_ke: 4, mulai: '09:30', selesai: '10:15', label: 'Jam Ke-4 (09:30 - 10:15)' },
-  { jam_ke: 5, mulai: '10:15', selesai: '11:00', label: 'Jam Ke-5 (10:15 - 11:00)' },
-  { jam_ke: 6, mulai: '11:00', selesai: '11:45', label: 'Jam Ke-6 (11:00 - 11:45)' },
-  { jam_ke: 7, mulai: '12:30', selesai: '13:15', label: 'Jam Ke-7 (12:30 - 13:15)' },
-  { jam_ke: 8, mulai: '13:15', selesai: '14:00', label: 'Jam Ke-8 (13:15 - 14:00)' },
-];
+// Default session time slots for each day (Senin s/d Sabtu, Jam 1 s/d Jam 8)
+export const DEFAULT_JADWAL_SESI_HARIAN: JadwalSesiHarian = {
+  Senin: [
+    { jam_ke: 1, mulai: '07:45', selesai: '08:30', label: 'Jam Ke-1 (07:45 - 08:30)' },
+    { jam_ke: 2, mulai: '08:30', selesai: '09:15', label: 'Jam Ke-2 (08:30 - 09:15)' },
+    { jam_ke: 3, mulai: '09:15', selesai: '09:55', label: 'Jam Ke-3 (09:15 - 09:55)' },
+    { jam_ke: 4, mulai: '10:15', selesai: '10:55', label: 'Jam Ke-4 (10:15 - 10:55)' },
+    { jam_ke: 5, mulai: '10:55', selesai: '11:35', label: 'Jam Ke-5 (10:55 - 11:35)' },
+    { jam_ke: 6, mulai: '11:35', selesai: '12:15', label: 'Jam Ke-6 (11:35 - 12:15)' },
+    { jam_ke: 7, mulai: '13:00', selesai: '13:40', label: 'Jam Ke-7 (13:00 - 13:40)' },
+    { jam_ke: 8, mulai: '13:40', selesai: '14:20', label: 'Jam Ke-8 (13:40 - 14:20)' },
+  ],
+  Selasa: [
+    { jam_ke: 1, mulai: '07:00', selesai: '07:45', label: 'Jam Ke-1 (07:00 - 07:45)' },
+    { jam_ke: 2, mulai: '07:45', selesai: '08:30', label: 'Jam Ke-2 (07:45 - 08:30)' },
+    { jam_ke: 3, mulai: '08:30', selesai: '09:15', label: 'Jam Ke-3 (08:30 - 09:15)' },
+    { jam_ke: 4, mulai: '09:35', selesai: '10:15', label: 'Jam Ke-4 (09:35 - 10:15)' },
+    { jam_ke: 5, mulai: '10:15', selesai: '10:55', label: 'Jam Ke-5 (10:15 - 10:55)' },
+    { jam_ke: 6, mulai: '10:55', selesai: '11:35', label: 'Jam Ke-6 (10:55 - 11:35)' },
+    { jam_ke: 7, mulai: '12:45', selesai: '13:30', label: 'Jam Ke-7 (12:45 - 13:30)' },
+    { jam_ke: 8, mulai: '13:30', selesai: '14:15', label: 'Jam Ke-8 (13:30 - 14:15)' },
+  ],
+  Rabu: [
+    { jam_ke: 1, mulai: '07:00', selesai: '07:45', label: 'Jam Ke-1 (07:00 - 07:45)' },
+    { jam_ke: 2, mulai: '07:45', selesai: '08:30', label: 'Jam Ke-2 (07:45 - 08:30)' },
+    { jam_ke: 3, mulai: '08:30', selesai: '09:15', label: 'Jam Ke-3 (08:30 - 09:15)' },
+    { jam_ke: 4, mulai: '09:35', selesai: '10:15', label: 'Jam Ke-4 (09:35 - 10:15)' },
+    { jam_ke: 5, mulai: '10:15', selesai: '10:55', label: 'Jam Ke-5 (10:15 - 10:55)' },
+    { jam_ke: 6, mulai: '10:55', selesai: '11:35', label: 'Jam Ke-6 (10:55 - 11:35)' },
+    { jam_ke: 7, mulai: '12:45', selesai: '13:30', label: 'Jam Ke-7 (12:45 - 13:30)' },
+    { jam_ke: 8, mulai: '13:30', selesai: '14:15', label: 'Jam Ke-8 (13:30 - 14:15)' },
+  ],
+  Kamis: [
+    { jam_ke: 1, mulai: '07:00', selesai: '07:45', label: 'Jam Ke-1 (07:00 - 07:45)' },
+    { jam_ke: 2, mulai: '07:45', selesai: '08:30', label: 'Jam Ke-2 (07:45 - 08:30)' },
+    { jam_ke: 3, mulai: '08:30', selesai: '09:15', label: 'Jam Ke-3 (08:30 - 09:15)' },
+    { jam_ke: 4, mulai: '09:35', selesai: '10:15', label: 'Jam Ke-4 (09:35 - 10:15)' },
+    { jam_ke: 5, mulai: '10:15', selesai: '10:55', label: 'Jam Ke-5 (10:15 - 10:55)' },
+    { jam_ke: 6, mulai: '10:55', selesai: '11:35', label: 'Jam Ke-6 (10:55 - 11:35)' },
+    { jam_ke: 7, mulai: '12:45', selesai: '13:30', label: 'Jam Ke-7 (12:45 - 13:30)' },
+    { jam_ke: 8, mulai: '13:30', selesai: '14:15', label: 'Jam Ke-8 (13:30 - 14:15)' },
+  ],
+  Jumat: [
+    { jam_ke: 1, mulai: '07:00', selesai: '07:35', label: 'Jam Ke-1 (07:00 - 07:35)' },
+    { jam_ke: 2, mulai: '07:35', selesai: '08:10', label: 'Jam Ke-2 (07:35 - 08:10)' },
+    { jam_ke: 3, mulai: '08:10', selesai: '08:45', label: 'Jam Ke-3 (08:10 - 08:45)' },
+    { jam_ke: 4, mulai: '09:05', selesai: '09:40', label: 'Jam Ke-4 (09:05 - 09:40)' },
+    { jam_ke: 5, mulai: '09:40', selesai: '10:15', label: 'Jam Ke-5 (09:40 - 10:15)' },
+    { jam_ke: 6, mulai: '10:15', selesai: '10:50', label: 'Jam Ke-6 (10:15 - 10:50)' },
+    { jam_ke: 7, mulai: '13:00', selesai: '13:40', label: 'Jam Ke-7 (13:00 - 13:40)' },
+    { jam_ke: 8, mulai: '13:40', selesai: '14:20', label: 'Jam Ke-8 (13:40 - 14:20)' },
+  ],
+  Sabtu: [
+    { jam_ke: 1, mulai: '07:00', selesai: '07:40', label: 'Jam Ke-1 (07:00 - 07:40)' },
+    { jam_ke: 2, mulai: '07:40', selesai: '08:20', label: 'Jam Ke-2 (07:40 - 08:20)' },
+    { jam_ke: 3, mulai: '08:20', selesai: '09:00', label: 'Jam Ke-3 (08:20 - 09:00)' },
+    { jam_ke: 4, mulai: '09:20', selesai: '10:00', label: 'Jam Ke-4 (09:20 - 10:00)' },
+    { jam_ke: 5, mulai: '10:00', selesai: '10:40', label: 'Jam Ke-5 (10:00 - 10:40)' },
+    { jam_ke: 6, mulai: '10:40', selesai: '11:20', label: 'Jam Ke-6 (10:40 - 11:20)' },
+    { jam_ke: 7, mulai: '12:30', selesai: '13:10', label: 'Jam Ke-7 (12:30 - 13:10)' },
+    { jam_ke: 8, mulai: '13:10', selesai: '13:50', label: 'Jam Ke-8 (13:10 - 13:50)' },
+  ],
+};
+
+// Fallback general config for backward compatibility
+export const JAM_PEMBELAJARAN_CONFIG: JamPembelajaranConfigItem[] = DEFAULT_JADWAL_SESI_HARIAN.Selasa;
 
 export const INITIAL_SETTINGS: AppSettings = {
   namaAplikasi: 'SISTEM PENJADWALAN RUANGAN MULTIMEDIA',
@@ -45,6 +96,7 @@ export const INITIAL_SETTINGS: AppSettings = {
   googleSheetsWebhookUrl: 'https://script.google.com/macros/s/AKfycbxIGbrYQBvOEQ0e7V8-icSOsUpBuWPADh5oVwoWMuta1ItBE1_mtDaAU_kEkIw7-eIvcA/exec',
   autoSyncSheets: true,
   autoRefreshTVSeconds: 15,
+  jadwalSesiHarian: DEFAULT_JADWAL_SESI_HARIAN,
 };
 
 export const INITIAL_USERS: User[] = [
@@ -389,4 +441,102 @@ export const formatGuruDisplayName = (guruOrName?: string | Guru | null, short =
   const baseName = clean.split(',')[0].trim();
   return baseName || fullName;
 };
+
+// Calculate duration in minutes between "HH:MM" and "HH:MM"
+export function calculateDurationInMinutes(mulai: string, selesai: string): number {
+  if (!mulai || !selesai) return 0;
+  const [startH, startM] = mulai.split(':').map(Number);
+  const [endH, endM] = selesai.split(':').map(Number);
+  if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return 0;
+  const startTotal = startH * 60 + startM;
+  const endTotal = endH * 60 + endM;
+  return Math.max(0, endTotal - startTotal);
+}
+
+// Get the 8 session slots for a specific day from settings (or defaults)
+export function getJamListForHari(
+  hari?: HariType | string | null,
+  settings?: AppSettings | null
+): JamPembelajaranConfigItem[] {
+  const normalizedHari = (hari as HariType) || 'Senin';
+  const dailyConfig = settings?.jadwalSesiHarian || DEFAULT_JADWAL_SESI_HARIAN;
+  const list = dailyConfig[normalizedHari] || DEFAULT_JADWAL_SESI_HARIAN[normalizedHari] || DEFAULT_JADWAL_SESI_HARIAN.Senin;
+  return list;
+}
+
+// Get specific period configuration for a given day and period number
+export function getJamConfig(
+  hari?: HariType | string | null,
+  jam_ke?: number | null,
+  settings?: AppSettings | null
+): JamPembelajaranConfigItem {
+  const jamNum = (jam_ke || 1) as JamPembelajaran;
+  const list = getJamListForHari(hari, settings);
+  const item = list.find((j) => j.jam_ke === jamNum);
+  if (item) return item;
+  return {
+    jam_ke: jamNum,
+    mulai: '07:00',
+    selesai: '07:45',
+    label: `Jam Ke-${jamNum} (07:00 - 07:45)`,
+  };
+}
+
+// Get formatted time range string like "07:45 - 08:30" or "Jam Ke-1 (07:45 - 08:30)"
+export function getFormattedJamRange(
+  hari?: HariType | string | null,
+  jam_ke?: number | null,
+  settings?: AppSettings | null,
+  includeLabel = false
+): string {
+  const config = getJamConfig(hari, jam_ke, settings);
+  if (includeLabel) {
+    return `Jam ke-${config.jam_ke} (${config.mulai} - ${config.selesai})`;
+  }
+  return `${config.mulai} - ${config.selesai}`;
+}
+
+// Dynamically determine current active period (1 to 8) for a day based on current clock time
+export function getCurrentPeriodForHari(
+  hari?: HariType | string | null,
+  settings?: AppSettings | null,
+  date: Date = new Date()
+): number {
+  const normalizedHari = (hari as HariType) || getHariNameFromDate(date.toISOString().slice(0, 10));
+  const sessions = getJamListForHari(normalizedHari, settings);
+  const currentTotalMin = date.getHours() * 60 + date.getMinutes();
+
+  for (const session of sessions) {
+    const [startH, startM] = session.mulai.split(':').map(Number);
+    const [endH, endM] = session.selesai.split(':').map(Number);
+    if (!isNaN(startH) && !isNaN(endH)) {
+      const startMin = startH * 60 + startM;
+      const endMin = endH * 60 + endM;
+      if (currentTotalMin >= startMin && currentTotalMin < endMin) {
+        return session.jam_ke;
+      }
+    }
+  }
+
+  // If before first session, return 1
+  const firstSession = sessions[0];
+  if (firstSession) {
+    const [startH, startM] = firstSession.mulai.split(':').map(Number);
+    if (currentTotalMin < (startH * 60 + startM)) {
+      return 1;
+    }
+  }
+
+  // If between sessions or after school, find closest upcoming or default to 1/3
+  for (let i = 0; i < sessions.length; i++) {
+    const s = sessions[i];
+    const [startH, startM] = s.mulai.split(':').map(Number);
+    if (currentTotalMin <= (startH * 60 + startM)) {
+      return s.jam_ke;
+    }
+  }
+
+  return 1;
+}
+
 
