@@ -11,7 +11,9 @@ import {
   Monitor,
   PlusCircle,
   School,
+  ShieldCheck,
   Sparkles,
+  Tv,
   Users,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
@@ -123,20 +125,52 @@ export const PublicJadwalView: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-center sm:justify-end gap-2">
+            {/* Booking Trigger */}
             <button
+              id="btn-public-booking"
               onClick={() => setIsBookingModalOpen(true)}
-              className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs shadow-md transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
+              className="px-3.5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-bold text-xs shadow-md transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Ajukan Peminjaman</span>
             </button>
+
+            {/* Smart TV Display */}
             <button
-              onClick={() => setActiveView('dashboard')}
-              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+              id="btn-public-smart-tv"
+              onClick={() => setActiveView('smart-tv')}
+              className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold transition-colors flex items-center gap-1.5"
+              title="Buka Tampilan Digital Signage Smart TV"
             >
-              <Lock className="w-3.5 h-3.5" />
-              <span>Admin Dashboard</span>
+              <Tv className="w-3.5 h-3.5 text-emerald-400" />
+              <span className="hidden xs:inline">Mode Smart TV</span>
+            </button>
+
+            {/* Admin Dashboard / Login Trigger */}
+            <button
+              id="btn-public-admin-dashboard"
+              onClick={() => {
+                if (!currentUser) {
+                  setIsLoginModalOpen(true);
+                } else {
+                  setActiveView('dashboard');
+                }
+              }}
+              className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-teal-700 to-emerald-800 hover:from-teal-600 hover:to-emerald-700 text-white text-xs font-bold shadow-sm transition-all hover:scale-105 flex items-center gap-1.5"
+              title="Masuk ke Dashboard Administrator & Manajemen Jadwal"
+            >
+              {currentUser ? (
+                <>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Dashboard Admin ({currentUser.nama.split(' ')[0]})</span>
+                </>
+              ) : (
+                <>
+                  <Lock className="w-3.5 h-3.5 text-emerald-300" />
+                  <span>Admin Dashboard / Login</span>
+                </>
+              )}
             </button>
           </div>
         </div>

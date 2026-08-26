@@ -3,7 +3,7 @@ import { KeyRound, Lock, School, ShieldCheck, User, X } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 
 export const LoginModal: React.FC = () => {
-  const { isLoginModalOpen, setIsLoginModalOpen, login, userList } = useApp();
+  const { isLoginModalOpen, setIsLoginModalOpen, login, userList, setActiveView } = useApp();
 
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('admin123');
@@ -17,6 +17,7 @@ export const LoginModal: React.FC = () => {
     const success = login(username, password);
     if (success) {
       setIsLoginModalOpen(false);
+      setActiveView('dashboard');
     } else {
       setErrorMsg('Username atau password salah. Silakan coba kembali.');
     }

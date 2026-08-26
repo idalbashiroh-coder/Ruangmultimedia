@@ -122,6 +122,17 @@ export const Navbar: React.FC<{ onToggleSidebar: () => void; isSidebarOpen: bool
               <span className="hidden xs:inline">Buat Jadwal</span>
             </button>
 
+            {/* Public View Button */}
+            <button
+              id="btn-navbar-public-view"
+              onClick={() => setActiveView('public')}
+              title="Kembali ke Tampilan Publik Guru & Siswa"
+              className="p-2 rounded-lg bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100 text-xs font-semibold transition-colors flex items-center gap-1.5"
+            >
+              <Monitor className="w-4 h-4 text-teal-600" />
+              <span className="hidden sm:inline">Halaman Publik</span>
+            </button>
+
             {/* Smart TV View Button */}
             <button
               id="btn-navbar-smart-tv"

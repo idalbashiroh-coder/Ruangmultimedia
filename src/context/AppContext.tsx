@@ -268,8 +268,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, []);
 
-  // UI state
-  const [activeView, setActiveView] = useState<string>('dashboard');
+  // UI state - Default landing view is 'public' (Akses Publik Guru & Siswa)
+  const [activeView, setActiveView] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const viewParam = urlParams.get('view');
+      if (viewParam) return viewParam;
+      const hash = window.location.hash.replace('#', '');
+      if (hash) return hash;
+    }
+    return 'public';
+  });
   const [selectedWeekOffset, setSelectedWeekOffset] = useState<number>(0);
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
