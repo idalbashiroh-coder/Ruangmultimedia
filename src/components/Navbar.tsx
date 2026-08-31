@@ -163,13 +163,14 @@ export const Navbar: React.FC<{ onToggleSidebar: () => void; isSidebarOpen: bool
               <span className="hidden lg:inline font-bold">Sheets Live</span>
             </button>
 
-            {/* User Profile / Role Switcher */}
+            {/* User Profile / Role Switcher & Logout */}
             {currentUser ? (
               <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
                 <button
                   id="btn-user-profile"
                   onClick={() => setIsLoginModalOpen(true)}
                   className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100 transition-colors text-left"
+                  title="Lihat status akun / Ganti Akun"
                 >
                   <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold ring-2 ring-emerald-500/30">
                     {currentUser.nama.charAt(0)}
@@ -190,6 +191,24 @@ export const Navbar: React.FC<{ onToggleSidebar: () => void; isSidebarOpen: bool
                       {currentUser.role}
                     </span>
                   </div>
+                </button>
+
+                <button
+                  id="btn-navbar-logout"
+                  onClick={() => {
+                    setCurrentUser(null);
+                    try {
+                      localStorage.removeItem('albashiroh_multimedia_current_user_v2');
+                    } catch {
+                      // ignore
+                    }
+                    setActiveView('public');
+                  }}
+                  className="p-2 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                  title="Keluar / Logout dari Administrator"
+                  aria-label="Logout"
+                >
+                  <LogOut className="w-4 h-4" />
                 </button>
               </div>
             ) : (

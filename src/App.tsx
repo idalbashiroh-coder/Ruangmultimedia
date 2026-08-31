@@ -17,7 +17,7 @@ import { SmartTvDisplayView } from './components/SmartTvDisplayView';
 import { AppProvider, useApp } from './context/AppContext';
 
 const AppContent: React.FC = () => {
-  const { activeView } = useApp();
+  const { activeView, currentUser, setIsLoginModalOpen } = useApp();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
@@ -33,8 +33,9 @@ const AppContent: React.FC = () => {
     );
   }
 
-  // Public Teacher & Student View
-  if (['public', 'publik'].includes(activeView)) {
+  // Public Teacher & Student View OR Unauthenticated access protection
+  const isPublicView = ['public', 'publik'].includes(activeView);
+  if (isPublicView || !currentUser) {
     return (
       <>
         <PublicJadwalView />

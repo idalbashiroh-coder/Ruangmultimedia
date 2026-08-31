@@ -171,12 +171,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (parsed && (parsed.id || parsed.username)) {
+          return parsed;
+        }
       } catch {
-        return INITIAL_USERS[0];
+        return null;
       }
     }
-    return INITIAL_USERS[0]; // Default to Admin for full experience preview
+    return null; // WAJIB LOGIN: Tidak ada auto-login admin default
   });
 
   const [guruList, setGuruList] = useState<Guru[]>(() => {
@@ -902,6 +905,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       addLog('TAMBAH_JADWAL', 'System', `Pengguna ${currentUser.nama || currentUser.nama_lengkap} keluar dari sistem.`);
     }
     setCurrentUser(null);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.CURRENT_USER);
+    } catch {
+      // ignore
+    }
+    setActiveView('public');
   };
 
   // Users & Settings

@@ -191,7 +191,7 @@ export const PublicJadwalView: React.FC = () => {
                 }
               }}
               className="px-3.5 py-2.5 rounded-xl bg-gradient-to-r from-teal-700 to-emerald-800 hover:from-teal-600 hover:to-emerald-700 text-white text-xs font-bold shadow-sm transition-all hover:scale-105 flex items-center gap-1.5"
-              title="Masuk ke Dashboard Administrator & Manajemen Jadwal"
+              title={currentUser ? "Buka Dashboard Administrator" : "Wajib Login untuk mengakses Dashboard Administrator"}
             >
               {currentUser ? (
                 <>
@@ -201,7 +201,7 @@ export const PublicJadwalView: React.FC = () => {
               ) : (
                 <>
                   <Lock className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>Admin Dashboard / Login</span>
+                  <span>Dashboard Admin (Wajib Login)</span>
                 </>
               )}
             </button>
