@@ -99,6 +99,8 @@ export interface JamPembelajaranConfigItem {
   mulai: string;
   selesai: string;
   label?: string;
+  durasiMenit?: number;
+  keterangan?: string;
 }
 
 export type JadwalSesiHarian = Record<HariType, JamPembelajaranConfigItem[]>;

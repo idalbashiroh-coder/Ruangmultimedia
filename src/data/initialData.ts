@@ -106,7 +106,7 @@ export const INITIAL_USERS: User[] = [
     nama_lengkap: 'Administrator Multimedia',
     username: 'admin',
     email: 'id.albashiroh@gmail.com',
-    password: 'admin',
+    password: 'admin123',
     role: 'admin',
     created_at: '2025-07-01T08:00:00.000Z',
   },

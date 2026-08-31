@@ -41,11 +41,16 @@ import {
   calculateDurationInMinutes,
   getFormattedJamRange,
 } from '../data/initialData';
+import { generateJamPelajaranSheetRows } from '../utils/sheetParser';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 
 const APPS_SCRIPT_CODE = `/**
- * GOOGLE APPS SCRIPT - SINKRONISASI JADWAL MULTIMEDIA
+ * GOOGLE APPS SCRIPT - SINKRONISASI JADWAL & PENGATURAN JAM MULTIMEDIA
  * SMP ISLAM ALBASHIROH TUREN
+ * 
+ * Fitur:
+ * 1. Sheet "Jadwal_Multimedia" -> Data booking jadwal lab/ruangan multimedia
+ * 2. Sheet "Jam_Pelajaran" -> Pengaturan jam ke-1 s/d jam ke-8 (Senin - Sabtu)
  * 
  * Petunjuk:
  * 1. Di Spreadsheet Anda: Buka menu Ekstensi > Apps Script
@@ -53,7 +58,7 @@ const APPS_SCRIPT_CODE = `/**
  * 3. Klik Terapkan (Deploy) > Penerapan baru (New deployment)
  * 4. Pilih jenis: "Aplikasi Web" (Web app)
  * 5. Jalankan sebagai: "Saya (email Anda)"
- * 6. Yang memiliki akses: "Siapa saja" (Anyone) -> (PENTING AGAR APLIKASI BISA MENGIRIM DATA)
+ * 6. Yang memiliki akses: "Siapa saja" (Anyone) -> (PENTING AGAR APLIKASI BISA SINKRON)
  * 7. Klik Terapkan -> Berikan Izin Akses -> Salin URL Web App (akhiran /exec)
  * 8. Tempelkan URL tersebut ke kolom Webhook URL di aplikasi.
  */
@@ -61,31 +66,18 @@ const APPS_SCRIPT_CODE = `/**
 function doPost(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheetName = "Jadwal_Multimedia";
-    var sheet = ss.getSheetByName(sheetName);
-    
-    // Jika lembar belum ada, buat otomatis beserta header
-    if (!sheet) {
-      sheet = ss.insertSheet(sheetName);
-      var headers = [
-        "Waktu Input", "ID Jadwal", "Tanggal", "Hari", "Jam Ke", 
-        "Waktu Sesi", "Ruangan", "Guru Pengajar", "NIP Guru", 
-        "Mata Pelajaran", "Kelas / Rombel", "Keperluan", "Status", "Dibuat Oleh"
-      ];
-      sheet.appendRow(headers);
-      var headerRange = sheet.getRange(1, 1, 1, headers.length);
-      headerRange.setBackground("#059669");
-      headerRange.setFontColor("#FFFFFF");
-      headerRange.setFontWeight("bold");
-      headerRange.setHorizontalAlignment("center");
-      sheet.setFrozenRows(1);
-    }
-    
-    var contents = e.postData.contents;
+    var contents = e.postData ? e.postData.contents : "{}";
     var payload = JSON.parse(contents);
     var action = payload.action;
     
+    // 1. SINKRONISASI PENGATURAN JAM PELAJARAN JIKA DISERTAKAN
+    if (payload.jam_pelajaran && Array.isArray(payload.jam_pelajaran)) {
+      syncJamPelajaranSheet(ss, payload.jam_pelajaran);
+    }
+    
+    // 2. SINKRONISASI JADWAL MULTIMEDIA (SYNC_ALL)
     if (action === "SYNC_ALL" && payload.data) {
+      var sheet = getOrCreateJadwalSheet(ss);
       var lastRow = sheet.getLastRow();
       if (lastRow > 1) {
         sheet.getRange(2, 1, lastRow - 1, 14).clearContent();
@@ -117,10 +109,18 @@ function doPost(e) {
       
       return ContentService.createTextOutput(JSON.stringify({
         status: "success",
-        message: "Semua data (" + rows.length + " entri) berhasil disinkronkan."
+        message: "Data jadwal (" + rows.length + " entri) dan pengaturan jam berhasil disinkronkan."
+      })).setMimeType(ContentService.MimeType.JSON);
+      
+    } else if (action === "SYNC_JAM_PELAJARAN" && payload.jam_pelajaran) {
+      syncJamPelajaranSheet(ss, payload.jam_pelajaran);
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        message: "Pengaturan Jam Pelajaran (Senin s/d Sabtu) berhasil diperbarui di tab Jam_Pelajaran."
       })).setMimeType(ContentService.MimeType.JSON);
       
     } else if (action === "APPEND_JADWAL" && payload.data) {
+      var sheet = getOrCreateJadwalSheet(ss);
       payload.data.forEach(function(item) {
         sheet.appendRow([
           new Date(),
@@ -162,13 +162,33 @@ function doPost(e) {
 function doGet(e) {
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheetName = "Jadwal_Multimedia";
-    var sheet = ss.getSheetByName(sheetName) || ss.getActiveSheet();
-    var values = sheet.getDataRange().getValues();
+    var paramSheet = e && e.parameter ? e.parameter.sheet : "";
+    
+    // Auto-create Jam_Pelajaran sheet if not present
+    getOrCreateJamPelajaranSheet(ss);
+    
+    if (paramSheet === "Jam_Pelajaran" || (e && e.parameter && e.parameter.action === "GET_JAM")) {
+      var jamSheet = ss.getSheetByName("Jam_Pelajaran");
+      var jamValues = jamSheet ? jamSheet.getDataRange().getValues() : [];
+      return ContentService.createTextOutput(JSON.stringify({
+        status: "success",
+        sheet: "Jam_Pelajaran",
+        total_rows: jamValues.length,
+        jam_pelajaran: jamValues,
+        data: jamValues
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    var jadwalSheet = getOrCreateJadwalSheet(ss);
+    var values = jadwalSheet.getDataRange().getValues();
+    var jamSheet = ss.getSheetByName("Jam_Pelajaran");
+    var jamValues = jamSheet ? jamSheet.getDataRange().getValues() : [];
+    
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",
       total_rows: values.length,
-      data: values
+      data: values,
+      jam_pelajaran: jamValues
     })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({
@@ -176,6 +196,110 @@ function doGet(e) {
       message: err.toString()
     })).setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+function getOrCreateJadwalSheet(ss) {
+  var sheetName = "Jadwal_Multimedia";
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    var headers = [
+      "Waktu Input", "ID Jadwal", "Tanggal", "Hari", "Jam Ke", 
+      "Waktu Sesi", "Ruangan", "Guru Pengajar", "NIP Guru", 
+      "Mata Pelajaran", "Kelas / Rombel", "Keperluan", "Status", "Dibuat Oleh"
+    ];
+    sheet.appendRow(headers);
+    var headerRange = sheet.getRange(1, 1, 1, headers.length);
+    headerRange.setBackground("#059669");
+    headerRange.setFontColor("#FFFFFF");
+    headerRange.setFontWeight("bold");
+    headerRange.setHorizontalAlignment("center");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function getOrCreateJamPelajaranSheet(ss) {
+  var sheetName = "Jam_Pelajaran";
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    var defaultRows = [
+      ["Hari", "Jam Ke", "Waktu Mulai", "Waktu Selesai", "Label Sesi", "Keterangan"],
+      ["Senin", 1, "08:30", "09:10", "Jam Ke-1 (08:30 - 09:10)", "KBM"],
+      ["Senin", 2, "09:10", "09:50", "Jam Ke-2 (09:10 - 09:50)", "KBM"],
+      ["Senin", 3, "09:50", "10:30", "Jam Ke-3 (09:50 - 10:30)", "KBM"],
+      ["Senin", 4, "10:30", "11:10", "Jam Ke-4 (10:30 - 11:10)", "KBM"],
+      ["Senin", 5, "11:10", "11:50", "Jam Ke-5 (11:10 - 11:50)", "KBM"],
+      ["Senin", 6, "11:50", "12:30", "Jam Ke-6 (11:50 - 12:30)", "KBM"],
+      ["Senin", 7, "12:30", "13:10", "Jam Ke-7 (12:30 - 13:10)", "KBM"],
+      ["Senin", 8, "13:10", "13:50", "Jam Ke-8 (13:10 - 13:50)", "KBM"],
+      ["Selasa", 1, "08:30", "09:10", "Jam Ke-1 (08:30 - 09:10)", "KBM"],
+      ["Selasa", 2, "09:10", "09:50", "Jam Ke-2 (09:10 - 09:50)", "KBM"],
+      ["Selasa", 3, "09:50", "10:30", "Jam Ke-3 (09:50 - 10:30)", "KBM"],
+      ["Selasa", 4, "10:30", "11:10", "Jam Ke-4 (10:30 - 11:10)", "KBM"],
+      ["Selasa", 5, "11:10", "11:50", "Jam Ke-5 (11:10 - 11:50)", "KBM"],
+      ["Selasa", 6, "11:50", "12:30", "Jam Ke-6 (11:50 - 12:30)", "KBM"],
+      ["Selasa", 7, "12:30", "13:10", "Jam Ke-7 (12:30 - 13:10)", "KBM"],
+      ["Selasa", 8, "13:10", "13:50", "Jam Ke-8 (13:10 - 13:50)", "KBM"],
+      ["Rabu", 1, "08:30", "09:10", "Jam Ke-1 (08:30 - 09:10)", "KBM"],
+      ["Rabu", 2, "09:10", "09:50", "Jam Ke-2 (09:10 - 09:50)", "KBM"],
+      ["Rabu", 3, "09:50", "10:30", "Jam Ke-3 (09:50 - 10:30)", "KBM"],
+      ["Rabu", 4, "10:30", "11:10", "Jam Ke-4 (10:30 - 11:10)", "KBM"],
+      ["Rabu", 5, "11:10", "11:50", "Jam Ke-5 (11:10 - 11:50)", "KBM"],
+      ["Rabu", 6, "11:50", "12:30", "Jam Ke-6 (11:50 - 12:30)", "KBM"],
+      ["Rabu", 7, "12:30", "13:10", "Jam Ke-7 (12:30 - 13:10)", "KBM"],
+      ["Rabu", 8, "13:10", "13:50", "Jam Ke-8 (13:10 - 13:50)", "KBM"],
+      ["Kamis", 1, "08:30", "09:10", "Jam Ke-1 (08:30 - 09:10)", "KBM"],
+      ["Kamis", 2, "09:10", "09:50", "Jam Ke-2 (09:10 - 09:50)", "KBM"],
+      ["Kamis", 3, "09:50", "10:30", "Jam Ke-3 (09:50 - 10:30)", "KBM"],
+      ["Kamis", 4, "10:30", "11:10", "Jam Ke-4 (10:30 - 11:10)", "KBM"],
+      ["Kamis", 5, "11:10", "11:50", "Jam Ke-5 (11:10 - 11:50)", "KBM"],
+      ["Kamis", 6, "11:50", "12:30", "Jam Ke-6 (11:50 - 12:30)", "KBM"],
+      ["Kamis", 7, "12:30", "13:10", "Jam Ke-7 (12:30 - 13:10)", "KBM"],
+      ["Kamis", 8, "13:10", "13:50", "Jam Ke-8 (13:10 - 13:50)", "KBM"],
+      ["Jumat", 1, "08:30", "09:05", "Jam Ke-1 (08:30 - 09:05)", "KBM"],
+      ["Jumat", 2, "09:05", "09:40", "Jam Ke-2 (09:05 - 09:40)", "KBM"],
+      ["Jumat", 3, "09:40", "10:15", "Jam Ke-3 (09:40 - 10:15)", "KBM"],
+      ["Jumat", 4, "10:15", "10:50", "Jam Ke-4 (10:15 - 10:50)", "KBM"],
+      ["Jumat", 5, "10:50", "11:25", "Jam Ke-5 (10:50 - 11:25)", "KBM"],
+      ["Jumat", 6, "13:00", "13:35", "Jam Ke-6 (13:00 - 13:35)", "KBM"],
+      ["Jumat", 7, "13:35", "14:10", "Jam Ke-7 (13:35 - 14:10)", "KBM"],
+      ["Jumat", 8, "14:10", "14:45", "Jam Ke-8 (14:10 - 14:45)", "KBM"],
+      ["Sabtu", 1, "08:30", "09:10", "Jam Ke-1 (08:30 - 09:10)", "KBM"],
+      ["Sabtu", 2, "09:10", "09:50", "Jam Ke-2 (09:10 - 09:50)", "KBM"],
+      ["Sabtu", 3, "09:50", "10:30", "Jam Ke-3 (09:50 - 10:30)", "KBM"],
+      ["Sabtu", 4, "10:30", "11:10", "Jam Ke-4 (10:30 - 11:10)", "KBM"],
+      ["Sabtu", 5, "11:10", "11:50", "Jam Ke-5 (11:10 - 11:50)", "KBM"],
+      ["Sabtu", 6, "11:50", "12:30", "Jam Ke-6 (11:50 - 12:30)", "KBM"],
+      ["Sabtu", 7, "12:30", "13:10", "Jam Ke-7 (12:30 - 13:10)", "KBM"],
+      ["Sabtu", 8, "13:10", "13:50", "Jam Ke-8 (13:10 - 13:50)", "KBM"]
+    ];
+    sheet.getRange(1, 1, defaultRows.length, 6).setValues(defaultRows);
+    var headerRange = sheet.getRange(1, 1, 1, 6);
+    headerRange.setBackground("#0D9488");
+    headerRange.setFontColor("#FFFFFF");
+    headerRange.setFontWeight("bold");
+    headerRange.setHorizontalAlignment("center");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function syncJamPelajaranSheet(ss, rows) {
+  if (!rows || rows.length === 0) return;
+  var sheet = ss.getSheetByName("Jam_Pelajaran");
+  if (!sheet) {
+    sheet = ss.insertSheet("Jam_Pelajaran");
+  }
+  sheet.clearContents();
+  sheet.getRange(1, 1, rows.length, rows[0].length).setValues(rows);
+  var headerRange = sheet.getRange(1, 1, 1, rows[0].length);
+  headerRange.setBackground("#0D9488");
+  headerRange.setFontColor("#FFFFFF");
+  headerRange.setFontWeight("bold");
+  headerRange.setHorizontalAlignment("center");
+  sheet.setFrozenRows(1);
 }`;
 
 export const PengaturanView: React.FC = () => {
@@ -191,6 +315,8 @@ export const PengaturanView: React.FC = () => {
     clearAuditLogs,
     currentUser,
     syncWithSheets,
+    syncJamPelajaranToSheets,
+    fetchJamPelajaranFromSheets,
     fetchFromGoogleSheets,
     isSyncingSheets,
     lastSyncTime,
@@ -434,6 +560,41 @@ export const PengaturanView: React.FC = () => {
     setTimeout(() => setSyncFeedback(null), 8000);
   };
 
+  const handleSyncJamToSheets = async () => {
+    setSyncFeedback(null);
+    const res = await syncJamPelajaranToSheets();
+    setSyncFeedback(res);
+    showToast(res.message);
+    setTimeout(() => setSyncFeedback(null), 6000);
+  };
+
+  const handleFetchJamFromSheets = async () => {
+    setSyncFeedback(null);
+    updateSettings(formSettings);
+    const targetSheet = formSettings.googleSheetsId || formSettings.googleSheetUrl || '';
+    const res = await fetchJamPelajaranFromSheets(targetSheet);
+    setSyncFeedback(res);
+    showToast(res.message);
+    if (res.success && res.data) {
+      setSessionSchedules(res.data);
+    }
+    setTimeout(() => setSyncFeedback(null), 8000);
+  };
+
+  const handleDownloadJamCsv = () => {
+    const rawRows = generateJamPelajaranSheetRows(sessionSchedules);
+    const csvContent = rawRows.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Jam_Pelajaran_Albashiroh_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Format CSV Jam Pembelajaran berhasil diunduh.');
+  };
+
 
   // New user form state
   const [newUsername, setNewUsername] = useState('');
@@ -613,9 +774,9 @@ export const PengaturanView: React.FC = () => {
       {/* TAB: PENGATURAN JAM PELAJARAN (SENIN - SABTU) */}
       {activeTab === 'jam_pelajaran' && (
         <div className="space-y-6">
-          {/* Section Info Header */}
+          {/* Info & Google Sheets Synchronization Header */}
           <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-4">
               <div>
                 <div className="flex items-center gap-2">
                   <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-700 flex items-center justify-center font-bold">
@@ -626,13 +787,45 @@ export const PengaturanView: React.FC = () => {
                       Pengaturan Jam Pembelajaran (Jam Ke-1 s/d Jam Ke-8)
                     </h3>
                     <p className="text-[11px] text-slate-500 mt-0.5">
-                      Atur jam mulai, selesai, dan durasi pada masing-masing hari (Senin s/d Sabtu) secara fleksibel.
+                      Atur jam mulai, selesai, dan durasi pada masing-masing hari (Senin s/d Sabtu) atau edit langsung di Spreadsheet tab <strong>Jam_Pelajaran</strong>.
                     </p>
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadJamCsv}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  title="Unduh format CSV jam pelajaran untuk diedit di Excel / Google Sheets"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Unduh CSV Sesi</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSyncJamToSheets}
+                  disabled={isSyncingSheets}
+                  className="px-3.5 py-2 rounded-xl bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  title="Kirim seluruh konfigurasi jam (Senin - Sabtu) ke Google Sheets tab Jam_Pelajaran"
+                >
+                  <Send className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : 'text-teal-700'}`} />
+                  <span>Kirim ke Spreadsheet</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleFetchJamFromSheets}
+                  disabled={isSyncingSheets}
+                  className="px-3.5 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                  title="Tarik pembaruan jam pelajaran dari Google Sheets tab Jam_Pelajaran"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isSyncingSheets ? 'animate-spin' : 'text-sky-700'}`} />
+                  <span>Tarik dari Spreadsheet</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleOpenCopyModal}
@@ -642,6 +835,7 @@ export const PengaturanView: React.FC = () => {
                   <Copy className="w-3.5 h-3.5 text-slate-600" />
                   <span>Salin Jam Hari Ini</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={() => handleResetCurrentDaySessions(selectedHari)}
@@ -651,6 +845,7 @@ export const PengaturanView: React.FC = () => {
                   <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
                   <span>Reset Hari Ini</span>
                 </button>
+
                 <button
                   type="button"
                   onClick={handleSaveAllSessions}
@@ -660,6 +855,34 @@ export const PengaturanView: React.FC = () => {
                   <span>Simpan Semua Hari</span>
                 </button>
               </div>
+            </div>
+
+            {/* Feature Callout Box for Spreadsheet editing */}
+            <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <FileSpreadsheet className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-emerald-950">
+                    Bisa Diubah Langsung Melalui Spreadsheet Google!
+                  </div>
+                  <div className="text-emerald-800 text-[11px] mt-0.5">
+                    Data pengaturan jam tersimpan pada lembar/tab <code className="bg-emerald-100 px-1 py-0.5 rounded font-mono font-bold text-emerald-950">Jam_Pelajaran</code>. 
+                    Anda dapat langsung mengedit kolom <strong>Waktu Mulai</strong> dan <strong>Waktu Selesai</strong> (format HH:mm) di spreadsheet untuk hari Senin s/d Sabtu di Jam Ke-1 s/d Jam Ke-8.
+                  </div>
+                </div>
+              </div>
+
+              {settings.googleSheetsId && (
+                <a
+                  href={`https://docs.google.com/spreadsheets/d/${settings.googleSheetsId}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] flex items-center gap-1 shrink-0 transition-colors"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>Buka Spreadsheet</span>
+                </a>
+              )}
             </div>
 
             {/* Day Selector Pills */}

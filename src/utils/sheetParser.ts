@@ -1,5 +1,20 @@
-import { Guru, HariType, Jadwal, JamPembelajaran, Kelas, Ruangan, StatusJadwal } from '../types';
-import { getDateOfCurrentWeek, getHariNameFromDate } from '../data/initialData';
+import {
+  Guru,
+  HariType,
+  Jadwal,
+  JadwalSesiHarian,
+  JamPembelajaran,
+  JamPembelajaranConfigItem,
+  Kelas,
+  Ruangan,
+  StatusJadwal,
+} from '../types';
+import {
+  DEFAULT_JADWAL_SESI_HARIAN,
+  getDateOfCurrentWeek,
+  getHariNameFromDate,
+  HARI_LIST,
+} from '../data/initialData';
 
 /**
  * Cleanly extract Sheet ID, GID, and Web Published URLs from any string or URL
@@ -926,3 +941,290 @@ export function parseGoogleSheetCsvToJadwal(
   const rows = parseCSV(csvText);
   return parseGoogleSheetRowsToJadwal(rows, guruList, kelasList, ruanganList);
 }
+
+/**
+ * Cleanly normalize time string to "HH:MM" (e.g., "08:30", "8:30", "08.30" -> "08:30")
+ */
+export function normalizeTimeToHHMM(raw: any): string {
+  if (raw === null || raw === undefined) return '';
+  if (raw instanceof Date) {
+    if (isNaN(raw.getTime())) return '';
+    const h = String(raw.getHours()).padStart(2, '0');
+    const m = String(raw.getMinutes()).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+  const str = String(raw).trim();
+  if (!str) return '';
+
+  // Match standard "08:30", "8:30", "08.30", "8.30", "08:30:00"
+  const match = str.match(/^(\d{1,2})[:.](\d{2})/);
+  if (match) {
+    const h = String(parseInt(match[1], 10)).padStart(2, '0');
+    const m = String(parseInt(match[2], 10)).padStart(2, '0');
+    return `${h}:${m}`;
+  }
+
+  return str;
+}
+
+/**
+ * Candidate sheet tab names for Jam Pelajaran (Session Timetable)
+ */
+export const KNOWN_JAM_SHEET_CANDIDATES = [
+  'Jam_Pelajaran',
+  'Jam Pelajaran',
+  'Pengaturan_Jam',
+  'Jadwal_Sesi_Harian',
+  'Jadwal_Sesi',
+  'Sesi_Harian',
+  'Jam',
+  'Waktu_KBM',
+];
+
+/**
+ * Parse raw Google Sheets rows into structured JadwalSesiHarian (Senin - Sabtu, Jam 1 - 8)
+ */
+export function parseGoogleSheetRowsToJamPelajaran(rawRows: any[][]): JadwalSesiHarian | null {
+  if (!rawRows || rawRows.length < 2) {
+    return null;
+  }
+
+  // Find header indices
+  let startIndex = 0;
+  const firstRow = rawRows[0].map((cell) => String(cell || '').toLowerCase().trim());
+  const hasHeader = firstRow.some(
+    (h) =>
+      h.includes('hari') ||
+      h.includes('jam') ||
+      h.includes('mulai') ||
+      h.includes('selesai') ||
+      h.includes('waktu')
+  );
+
+  let hariIdx = -1;
+  let jamIdx = -1;
+  let mulaiIdx = -1;
+  let selesaiIdx = -1;
+  let labelIdx = -1;
+  let ketIdx = -1;
+
+  if (hasHeader) {
+    startIndex = 1;
+    hariIdx = findBestHeaderIndex(firstRow, ['hari', 'day'], ['hari', 'day'], []);
+    jamIdx = findBestHeaderIndex(firstRow, ['jam ke', 'jam', 'sesi'], ['jam ke', 'jam', 'sesi'], ['waktu', 'mulai', 'selesai']);
+    mulaiIdx = findBestHeaderIndex(firstRow, ['waktu mulai', 'mulai', 'start'], ['waktu mulai', 'mulai', 'start', 'awal'], ['selesai', 'end']);
+    selesaiIdx = findBestHeaderIndex(firstRow, ['waktu selesai', 'selesai', 'end'], ['waktu selesai', 'selesai', 'end', 'akhir'], ['mulai', 'start']);
+    labelIdx = findBestHeaderIndex(firstRow, ['label', 'nama sesi', 'format'], ['label', 'format'], []);
+    ketIdx = findBestHeaderIndex(firstRow, ['keterangan', 'ket', 'catatan'], ['keterangan', 'ket', 'note', 'info'], []);
+  }
+
+  // Fallback positional indices if headers not cleanly matched
+  if (hariIdx === -1) hariIdx = 0;
+  if (jamIdx === -1) jamIdx = 1;
+  if (mulaiIdx === -1) mulaiIdx = 2;
+  if (selesaiIdx === -1) selesaiIdx = 3;
+  if (labelIdx === -1) labelIdx = 4;
+  if (ketIdx === -1) ketIdx = 5;
+
+  // Initialize result with a clone of default sessions
+  const result: JadwalSesiHarian = {
+    Senin: JSON.parse(JSON.stringify(DEFAULT_JADWAL_SESI_HARIAN.Senin)),
+    Selasa: JSON.parse(JSON.stringify(DEFAULT_JADWAL_SESI_HARIAN.Selasa)),
+    Rabu: JSON.parse(JSON.stringify(DEFAULT_JADWAL_SESI_HARIAN.Rabu)),
+    Kamis: JSON.parse(JSON.stringify(DEFAULT_JADWAL_SESI_HARIAN.Kamis)),
+    Jumat: JSON.parse(JSON.stringify(DEFAULT_JADWAL_SESI_HARIAN.Jumat)),
+    Sabtu: JSON.parse(JSON.stringify(DEFAULT_JADWAL_SESI_HARIAN.Sabtu)),
+  };
+
+  let validRowCount = 0;
+
+  for (let r = startIndex; r < rawRows.length; r++) {
+    const row = rawRows[r];
+    if (!row || row.length === 0) continue;
+    if (row.every((c) => c === null || c === undefined || String(c).trim() === '')) continue;
+
+    const rawHari = String(row[hariIdx] || '').trim();
+    const rawJam = String(row[jamIdx] || '').trim();
+    const rawMulai = normalizeTimeToHHMM(row[mulaiIdx]);
+    const rawSelesai = normalizeTimeToHHMM(row[selesaiIdx]);
+    const rawLabel = String(row[labelIdx] || '').trim();
+    const rawKet = ketIdx >= 0 && ketIdx < row.length ? String(row[ketIdx] || '').trim() : '';
+
+    // Match Hari
+    const validHari: HariType[] = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const matchedHari = validHari.find((h) => h.toLowerCase() === rawHari.toLowerCase());
+    if (!matchedHari) continue;
+
+    // Match Jam (1 to 8)
+    const jamNumMatch = rawJam.match(/\d+/);
+    if (!jamNumMatch) continue;
+    const jamNum = parseInt(jamNumMatch[0], 10);
+    if (jamNum < 1 || jamNum > 8) continue;
+
+    if (rawMulai || rawSelesai) {
+      const existingIdx = result[matchedHari].findIndex((item) => item.jam_ke === jamNum);
+      const fallbackItem = DEFAULT_JADWAL_SESI_HARIAN[matchedHari].find((i) => i.jam_ke === jamNum);
+
+      const finalMulai = rawMulai || fallbackItem?.mulai || '07:00';
+      const finalSelesai = rawSelesai || fallbackItem?.selesai || '07:40';
+      const finalLabel = rawLabel || `Jam Ke-${jamNum} (${finalMulai} - ${finalSelesai})`;
+
+      const updatedItem: JamPembelajaranConfigItem = {
+        jam_ke: jamNum as JamPembelajaran,
+        mulai: finalMulai,
+        selesai: finalSelesai,
+        label: finalLabel,
+        keterangan: rawKet || undefined,
+      };
+
+      if (existingIdx !== -1) {
+        result[matchedHari][existingIdx] = updatedItem;
+      } else {
+        result[matchedHari].push(updatedItem);
+      }
+      validRowCount++;
+    }
+  }
+
+  // Sort each day by jam_ke (1..8)
+  for (const hari of HARI_LIST) {
+    result[hari].sort((a, b) => a.jam_ke - b.jam_ke);
+  }
+
+  return validRowCount > 0 ? result : null;
+}
+
+/**
+ * Universal Multi-Strategy Fetcher for Jam_Pelajaran Sheet Tab
+ */
+export async function fetchAllGoogleSheetJamRows(
+  sheetInput: string,
+  webhookUrl?: string
+): Promise<{ rows: any[][]; source: string } | null> {
+  const { sheetId, isWebPublished } = extractGoogleSheetDetails(sheetInput);
+
+  // Strategy A: GViz JSONP Scanning across candidate tabs
+  if (sheetId && !isWebPublished) {
+    for (const tab of KNOWN_JAM_SHEET_CANDIDATES) {
+      try {
+        const rows = await fetchGoogleSheetGVizJsonp(sheetId, undefined, tab, 3500);
+        if (rows && rows.length >= 2) {
+          const firstRow = rows[0].map((c) => String(c || '').toLowerCase());
+          const isJamSheet = firstRow.some(
+            (h) => h.includes('hari') || h.includes('jam') || h.includes('mulai') || h.includes('selesai')
+          );
+          if (isJamSheet) {
+            return { rows, source: `Google Sheets GViz (${tab})` };
+          }
+        }
+      } catch {
+        // try next candidate tab
+      }
+    }
+  }
+
+  // Strategy B: GViz Direct JSON Fetch
+  if (sheetId && !isWebPublished) {
+    for (const tab of KNOWN_JAM_SHEET_CANDIDATES) {
+      try {
+        const rows = await fetchGoogleSheetGVizDirect(sheetId, undefined, tab);
+        if (rows && rows.length >= 2) {
+          const firstRow = rows[0].map((c) => String(c || '').toLowerCase());
+          const isJamSheet = firstRow.some(
+            (h) => h.includes('hari') || h.includes('jam') || h.includes('mulai') || h.includes('selesai')
+          );
+          if (isJamSheet) {
+            return { rows, source: `GViz Direct (${tab})` };
+          }
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+  }
+
+  // Strategy C: Webhook GET with specific sheet parameter
+  if (webhookUrl && webhookUrl.startsWith('http')) {
+    try {
+      const getUrl =
+        webhookUrl +
+        (webhookUrl.includes('?') ? '&' : '?') +
+        'sheet=Jam_Pelajaran&action=GET_JAM&_t=' +
+        Date.now();
+      const res = await fetch(getUrl, { cache: 'no-store' });
+      if (res.ok) {
+        const json = await res.json();
+        if (Array.isArray(json.jam_pelajaran) && json.jam_pelajaran.length >= 2) {
+          return { rows: json.jam_pelajaran, source: 'Apps Script Webhook (Jam_Pelajaran)' };
+        }
+        if (Array.isArray(json.data) && json.data.length >= 2) {
+          return { rows: json.data, source: 'Apps Script Webhook (Jam_Pelajaran)' };
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Strategy D: CSV Export for candidate tabs
+  if (sheetId && !isWebPublished) {
+    for (const tab of KNOWN_JAM_SHEET_CANDIDATES.slice(0, 3)) {
+      try {
+        const csvExportUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&sheet=${encodeURIComponent(
+          tab
+        )}`;
+        const rows = await fetchGoogleSheetCsv(csvExportUrl);
+        if (rows && rows.length >= 2) {
+          const firstRow = rows[0].map((c) => String(c || '').toLowerCase());
+          if (
+            firstRow.some(
+              (h) => h.includes('hari') || h.includes('jam') || h.includes('mulai') || h.includes('selesai')
+            )
+          ) {
+            return { rows, source: `CSV Export (${tab})` };
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Generate 2D array representation of Jam Pelajaran ready for Google Spreadsheet export
+ */
+export function generateJamPelajaranSheetRows(jadwalSesiHarian?: JadwalSesiHarian): any[][] {
+  const harian = jadwalSesiHarian || DEFAULT_JADWAL_SESI_HARIAN;
+  const rows: any[][] = [];
+
+  // Header row
+  rows.push(['Hari', 'Jam Ke', 'Waktu Mulai', 'Waktu Selesai', 'Label Sesi', 'Keterangan']);
+
+  // Rows for each day (Senin s/d Sabtu) and periods 1 s/d 8
+  for (const hari of HARI_LIST) {
+    const sessions = harian[hari] || DEFAULT_JADWAL_SESI_HARIAN[hari];
+    for (let jam = 1; jam <= 8; jam++) {
+      const item = sessions.find((s) => s.jam_ke === jam) || {
+        jam_ke: jam as JamPembelajaran,
+        mulai: '08:00',
+        selesai: '08:40',
+        label: `Jam Ke-${jam} (08:00 - 08:40)`,
+        keterangan: 'KBM',
+      };
+      rows.push([
+        hari,
+        item.jam_ke,
+        item.mulai,
+        item.selesai,
+        item.label,
+        item.keterangan || 'KBM',
+      ]);
+    }
+  }
+
+  return rows;
+}
+

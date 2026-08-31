@@ -29,9 +29,12 @@ import {
   UserRole,
 } from '../types';
 import {
+  fetchAllGoogleSheetJamRows,
   fetchAllGoogleSheetRawRows,
+  generateJamPelajaranSheetRows,
   parseGoogleSheetCsvToJadwal,
   parseGoogleSheetRowsToJadwal,
+  parseGoogleSheetRowsToJamPelajaran,
 } from '../utils/sheetParser';
 
 interface ConflictCheckResult {
@@ -135,6 +138,8 @@ interface AppContextType {
   isSyncingSheets: boolean;
   isRealtimeConnected: boolean;
   syncWithSheets: () => Promise<{ success: boolean; message: string }>;
+  syncJamPelajaranToSheets: () => Promise<{ success: boolean; message: string }>;
+  fetchJamPelajaranFromSheets: (isSilent?: boolean) => Promise<{ success: boolean; message: string }>;
   fetchFromGoogleSheets: (
     isSilent?: boolean,
     customSheetInput?: string
@@ -860,34 +865,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Auth Operations
   const login = (username: string, password?: string): boolean => {
     const trimmedUsername = username.trim().toLowerCase();
-    
-    // Find matching user
-    const matched = users.find(
-      (u) =>
-        u.username.toLowerCase() === trimmedUsername &&
-        (!password || !u.password || u.password === password || password === 'admin123' || password === 'operator123' || password === 'guru123')
-    );
+    const trimmedPassword = (password || '').trim();
+
+    if (!trimmedUsername || !trimmedPassword) {
+      return false;
+    }
+
+    // Find matching user with exact credential verification
+    const matched = users.find((u) => {
+      if (u.username.toLowerCase() !== trimmedUsername) return false;
+
+      // Check standard password or default credentials
+      if (u.password && u.password === trimmedPassword) return true;
+      if (u.username.toLowerCase() === 'admin' && (trimmedPassword === 'admin123' || trimmedPassword === 'admin')) return true;
+      if (u.username.toLowerCase() === 'operator' && (trimmedPassword === 'operator123' || trimmedPassword === 'operator')) return true;
+      if (u.role === 'guru' && (trimmedPassword === 'guru123' || trimmedPassword === 'guru')) return true;
+
+      return false;
+    });
 
     if (matched) {
       setCurrentUser(matched);
-      addLog('TAMBAH_JADWAL', 'System', `Pengguna ${matched.nama || matched.nama_lengkap} (${matched.role}) berhasil login.`);
-      return true;
-    }
-
-    // Role-based quick login fallback
-    if (trimmedUsername === 'admin' || trimmedUsername === 'administrator') {
-      const adminUser = users.find((u) => u.role === 'admin') || INITIAL_USERS[0];
-      setCurrentUser(adminUser);
-      return true;
-    }
-    if (trimmedUsername === 'operator') {
-      const opUser = users.find((u) => u.role === 'operator') || INITIAL_USERS[1];
-      setCurrentUser(opUser);
-      return true;
-    }
-    if (trimmedUsername === 'guru' || trimmedUsername.startsWith('guru_')) {
-      const guruUser = users.find((u) => u.role === 'guru') || INITIAL_USERS[2];
-      setCurrentUser(guruUser);
+      addLog(
+        'TAMBAH_JADWAL',
+        'System',
+        `Pengguna ${matched.nama || matched.nama_lengkap} (${matched.role}) berhasil login.`
+      );
       return true;
     }
 
@@ -1058,6 +1061,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       });
 
+      const jamPelajaranRows = generateJamPelajaranSheetRows(settings.jadwalSesiHarian);
       const webhookUrl = settings.googleSheetsWebhookUrl?.trim();
 
       if (webhookUrl && (webhookUrl.startsWith('http://') || webhookUrl.startsWith('https://'))) {
@@ -1076,6 +1080,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               tahun_pelajaran: settings.tahunPelajaran,
               semester: settings.semester,
               data: formattedData,
+              jam_pelajaran: jamPelajaranRows,
             }),
           });
         } catch (fetchErr) {
@@ -1094,19 +1099,143 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         'SYNC_SHEETS',
         'Sheets',
         webhookUrl
-          ? `Sinkronisasi webhook ke Google Spreadsheet sukses (${jadwalList.length} entri).`
+          ? `Sinkronisasi webhook ke Google Spreadsheet sukses (${jadwalList.length} jadwal + 48 sesi jam pelajaran).`
           : `Data diformat untuk Google Spreadsheet ID: ${settings.googleSheetId || settings.googleSheetsId}`
       );
       setIsSyncingSheets(false);
       return {
         success: true,
         message: webhookUrl
-          ? `Data ${jadwalList.length} entri jadwal berhasil dikirim langsung ke Google Spreadsheet via Webhook!`
+          ? `Data ${jadwalList.length} entri jadwal dan pengaturan jam sesi harian (Senin - Sabtu) berhasil dikirim langsung ke Google Spreadsheet!`
           : `Data siap (${jadwalList.length} entri). Masukkan Webhook URL untuk sinkronisasi otomatis langsung ke sel spreadsheet.`,
       };
     } catch {
       setIsSyncingSheets(false);
       return { success: false, message: 'Gagal melakukan sinkronisasi dengan Google Sheets.' };
+    }
+  };
+
+  // Dedicated sync for Jam Pelajaran (Session Timings) to Google Sheets
+  const syncJamPelajaranToSheets = async (): Promise<{ success: boolean; message: string }> => {
+    const webhookUrl = settings.googleSheetsWebhookUrl?.trim();
+    if (!webhookUrl || (!webhookUrl.startsWith('http://') && !webhookUrl.startsWith('https://'))) {
+      return {
+        success: false,
+        message: 'Google Apps Script Webhook URL belum diisi di Pengaturan Integrasi.',
+      };
+    }
+
+    try {
+      setIsSyncingSheets(true);
+      const jamPelajaranRows = generateJamPelajaranSheetRows(settings.jadwalSesiHarian);
+
+      await fetch(webhookUrl, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'SYNC_JAM_PELAJARAN',
+          timestamp: new Date().toISOString(),
+          sekolah: settings.namaSekolah,
+          total_rows: jamPelajaranRows.length - 1,
+          jam_pelajaran: jamPelajaranRows,
+        }),
+      });
+
+      await new Promise((res) => setTimeout(res, 600));
+      const syncTime = new Date().toLocaleTimeString('id-ID', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      setLastSheetsSyncTime(syncTime);
+      addLog(
+        'SYNC_SHEETS',
+        'Sheets',
+        'Pengaturan jam pembelajaran (Senin-Sabtu Jam 1-8) berhasil dikirim ke sheet Jam_Pelajaran.'
+      );
+      setIsSyncingSheets(false);
+      return {
+        success: true,
+        message:
+          'Pengaturan jam sesi pembelajaran (Senin - Sabtu Jam 1 s/d 8) berhasil dikirim dan disinkronkan ke tab "Jam_Pelajaran" pada Google Spreadsheet Anda!',
+      };
+    } catch (err: any) {
+      setIsSyncingSheets(false);
+      return {
+        success: false,
+        message: err?.message || 'Gagal mengirim pengaturan jam pembelajaran ke Google Spreadsheet.',
+      };
+    }
+  };
+
+  // Dedicated fetch for Jam Pelajaran (Session Timings) from Google Sheets
+  const fetchJamPelajaranFromSheets = async (
+    isSilent: boolean = false
+  ): Promise<{ success: boolean; message: string }> => {
+    const sheetInput = (
+      settings.googleSheetUrl ||
+      settings.googleSheetId ||
+      settings.googleSheetsId ||
+      ''
+    ).trim();
+    const webhookUrl = (settings.googleSheetsWebhookUrl || '').trim();
+
+    if (!sheetInput && !webhookUrl) {
+      if (!isSilent) {
+        return {
+          success: false,
+          message: 'Google Sheet ID atau Webhook URL belum dikonfigurasi di Pengaturan.',
+        };
+      }
+      return { success: false, message: '' };
+    }
+
+    try {
+      const jamData = await fetchAllGoogleSheetJamRows(sheetInput, webhookUrl);
+      if (jamData && jamData.rows.length >= 2) {
+        const parsedJam = parseGoogleSheetRowsToJamPelajaran(jamData.rows);
+        if (parsedJam) {
+          setSettings((prev) => {
+            const updated = {
+              ...prev,
+              jadwalSesiHarian: parsedJam,
+            };
+            try {
+              localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+            } catch (e) {
+              console.warn('Failed saving settings:', e);
+            }
+            return updated;
+          });
+
+          if (!isSilent) {
+            addLog(
+              'SYNC_SHEETS',
+              'Sheets',
+              `Memperbarui pengaturan jam pembelajaran dari tab Jam_Pelajaran (${jamData.source}).`
+            );
+          }
+
+          return {
+            success: true,
+            message: `Pengaturan jam pembelajaran (Senin s/d Sabtu) berhasil disinkronkan dari Google Spreadsheet (${jamData.source})!`,
+          };
+        }
+      }
+
+      return {
+        success: false,
+        message:
+          'Tab "Jam_Pelajaran" belum ditemukan di Spreadsheet. Gunakan tombol "Kirim Waktu Sesi ke Spreadsheet" untuk membuatnya secara otomatis.',
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        message: err?.message || 'Gagal membaca pengaturan jam dari Google Spreadsheet.',
+      };
     }
   };
 
@@ -1142,6 +1271,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     try {
       const { rows, source } = await fetchAllGoogleSheetRawRows(sheetInput, webhookUrl);
       const parsedJadwal = parseGoogleSheetRowsToJadwal(rows, guruList, kelasList, ruanganList);
+
+      // Concurrently attempt to read Jam_Pelajaran tab
+      try {
+        const jamData = await fetchAllGoogleSheetJamRows(sheetInput, webhookUrl);
+        if (jamData && jamData.rows.length >= 2) {
+          const parsedJam = parseGoogleSheetRowsToJamPelajaran(jamData.rows);
+          if (parsedJam) {
+            setSettings((prev) => {
+              const currentStr = JSON.stringify(prev.jadwalSesiHarian || {});
+              const newStr = JSON.stringify(parsedJam);
+              if (currentStr !== newStr) {
+                const updated = { ...prev, jadwalSesiHarian: parsedJam };
+                try {
+                  localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
+                } catch {
+                  // ignore
+                }
+                return updated;
+              }
+              return prev;
+            });
+          }
+        }
+      } catch {
+        // non-blocking for jam session polling
+      }
 
       setIsRealtimeConnected(true);
       const syncTime = new Date().toLocaleTimeString('id-ID', {
@@ -1311,6 +1466,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         isSyncingSheets,
         isRealtimeConnected,
         syncWithSheets,
+        syncJamPelajaranToSheets,
+        fetchJamPelajaranFromSheets,
         fetchFromGoogleSheets,
       }}
     >
